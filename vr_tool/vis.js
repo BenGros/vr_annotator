@@ -49,6 +49,11 @@ let totalMask;
 let mask_data_path = '';
 let newMask;
 
+let markedCell = []
+let currentMark = {line1: [], line2: [], remove: false};
+
+let voxelSize = 0.1
+
 // 'supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_im/1632_4096_2560.json'
 // supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_cellseg3d/1632_4096_2560.json
 // supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_train_random_sample_cellseg3d/320_6144_2816.json
@@ -171,7 +176,7 @@ function init(){
     volconfig = {threshMin: 500, threshMax: 800, channel: 0,
         chunkX: 32, chunkY: 32, chunkZ: 32, chunkNum: 0,
         colourMin: 500, colourMax: 1000, cubeSize: 1,
-        removeAnnotations: 0
+        removeAnnotations: 0, showMask: 1
     };
 
     // Build out GUI
@@ -179,12 +184,11 @@ function init(){
     gui.add(volconfig, 'threshMin', 0, 5000, 10).onFinishChange(load);
     gui.add(volconfig, 'threshMax', 0, 5000, 10).onFinishChange(load);
     gui.add(volconfig, 'chunkNum', 0,7, 1).onFinishChange(fullReload);
-    // gui.add(volconfig, 'colourMin', 0, 5000, 10).onFinishChange(load);
-    // gui.add(volconfig, 'colourMax', 0, 5000, 10).onFinishChange(load);
     gui.add(volconfig, 'cubeSize', 0, 10, 1).onFinishChange(()=>{
         vrLine.scale.setScalar(volconfig.cubeSize)
     });
     gui.add(volconfig, 'removeAnnotations', 0, 1, 1);
+    gui.add(volconfig, 'showMask',0,1,1).onFinishChange(()=>{toggleMask(volconfig.showMask)})
     gui.add({save: ()=>{
         if(!newMask){
             annotationsToNewMask()
@@ -212,9 +216,11 @@ function init(){
     maskSelect.addEventListener('change', ()=>{
         if(maskSelect.value == 'new'){
             oldMaskInp.style.display = "none";
+            newMaskInp.value = ''
             newMaskInp.style.display = 'inline';
             
         } else {
+            oldMaskInp.value = ''
             oldMaskInp.style.display = "inline";
             newMaskInp.style.display = 'none';
         }
@@ -235,6 +241,7 @@ function init(){
             oldMaskInp.value = '';
             newMask = false;
         }
+
         load();
         if(!newMask){
             console.log('mask')
@@ -272,10 +279,9 @@ function checkIntersection(){
         let meshItem = intersects[0].object
         for(let ant of ants){
             if(equals(meshItem.position, ant.meshObj.position)){
-                return {mItem: meshItem, antItem: ant};
+                return {mItem: meshItem, antItem: ant, intersect: intersects[0]};
             }
         };
-        intersects[0].object.material.color.set(0xff0000);
         return {mItem: meshItem};
     }
     return null;
@@ -284,32 +290,49 @@ function checkIntersection(){
 // to check if positions are equal
 // built in one was not working
 function equals(a, b){
-    if(a.x == b.x && a.y == b.y && a.z == b.z){
+    a.multiplyScalar(10)
+    b.multiplyScalar(10)
+
+    if(Math.round(a.x) == Math.round(b.x)
+         && Math.round(a.y) == Math.round(b.y) 
+        && Math.round(a.z) == Math.round(b.z)){
+            a.multiplyScalar(0.1)
+            b.multiplyScalar(0.1)
         return true;
     }
+    a.multiplyScalar(0.1)
+    b.multiplyScalar(0.1)
     return false
 }
 
 function onRightTriggerPress(event) {
+
     // used to set the cell annotator to the cell that it first intersects
     let castedObjects = checkIntersection();
     if(castedObjects != null && castedObjects.antItem != null){
         cellColours.currCol = castedObjects.antItem.colourNum;
         cellNumbers.currNum = castedObjects.antItem.cellNum;
+        if(volconfig.removeAnnotations == 1){
+            removeCellAnt(cellNumbers.currNum)
+        } else {
+            markCellCentre();
+        }
+        render()
     }
     vrLine.material.color.set(getAntColour(cellColours.currCol).code)
+
     
 }
 
 function onLeftTriggerPress(event){
     // for annotating a new cell
+
+    increaseCellColour();
+    separateCells(markedCell, totalMask, getBoundBox(cellNumbers.currNum),cellNumbers.currNum);
+    markedCell = [];
     cellNumbers.currNum = cellNumbers.nextNum;
     cellNumbers.nextNum += 1;
-    cellColours.currCol = cellColours.nextCol;
-    cellColours.nextCol +=1;
-    if(cellColours.nextCol >7){
-        cellColours.nextCol =0;
-    }
+
     vrLine.material.color.set(getAntColour(cellColours.currCol).code)
 }
 
@@ -327,7 +350,7 @@ function getAntColour(colour){
     // get hexadecimal coulour based on local code
     switch(colour){
         case 0:
-            return { name: "red", code: 0xff0000 };
+            return { name: "indigo", code: 0x4B0082 };
         case 1:
             return { name: "green", code: 0x00ff00 };
         case 2:
@@ -349,14 +372,12 @@ function getAntColour(colour){
         case 10:
             return { name: "crimson", code: 0xDC143C }; 
         case 11:
-            return { name: "gold", code: 0xDAA520 };   
+            return { name: "gold", code: 0xDAA520 };    
         case 12:
-            return { name: "Dark Turquoise", code: 0x00CED1 };  
-        case 13:
             return { name: "coral", code: 0xFF7F50 };   
-        case 14:
+        case 13:
             return { name: "dark green", code: 0x556B2F };   
-        case 15:
+        case 14:
             return { name: "purple", code: 0xBA55D3 };   
     }
 }
@@ -365,7 +386,7 @@ function increaseCellColour(){
     // used to increment to the next cell colour max 15
     cellColours.currCol = cellColours.nextCol
     cellColours.nextCol +=1;
-    if(cellColours.nextCol > 15){
+    if(cellColours.nextCol > 14){
         cellColours.nextCol = 0;
     }
 }
@@ -393,7 +414,7 @@ function colour(){
         for(let m of selectedMesh){
             let currPos = m.position;
             removedMesh.push(m);
-            scene.remove(m);
+            //scene.remove(m);
             m = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({color: getAntColour(cellColours.currCol).code, opacity: 0.5, transparent: true}));
             scene.add(m)
             m.position.set(currPos.x, currPos.y, currPos.z);
@@ -429,7 +450,7 @@ function colour(){
     }
 
 }
-let voxelSize = 0.1
+
 function load(){
     /* this function is used to load in all voxels of the image data
     that are found within the predetermined chunk and fall within the user set intensity range */
@@ -503,16 +524,21 @@ function maskLoader(){
     // loads and renders a specfic chunk of the mask data
     return new Promise((resolve)=>{
         if(refresh){
-            ants.forEach(ant =>scene.remove(ant.meshObj));
+            ants.forEach(ant => scene.remove(ant.meshObj));
             ants = [];
         }
         new THREE.FileLoader().load( mask_data_path, function ( volume ) {
             let maskData = JSON.parse(volume);
             let chunkCoords = chunkToCoords(volconfig.chunkNum);
+            let maxCNum = 0;
             for(let z = volconfig.chunkZ*chunkCoords.z ; z< volconfig.chunkZ*chunkCoords.z + volconfig.chunkZ; z++){
                 for(let y = volconfig.chunkY*chunkCoords.y ; y< volconfig.chunkY*chunkCoords.y+ volconfig.chunkY; y++){
                     for(let x = volconfig.chunkX*chunkCoords.x ; x< volconfig.chunkX*chunkCoords.x + volconfig.chunkX; x++){
                         let cellNum =maskData[z][y][x];
+                        if(cellNum > maxCNum){
+                            cellNumbers.currNum = maxCNum;
+                            cellNumbers.nextNum = maxCNum + 1;
+                        }
                         if(cellNum !=0){
                             let cellColourNum;
                             let e = checkCellNumExist(cellNum);
@@ -530,7 +556,7 @@ function maskLoader(){
                             scene.add(mesh);
                             let ant = {meshObj: mesh, cellNum: cellNum, colourNum: cellColourNum};
                             let oldMesh = antToMesh(ant);
-                            scene.remove(oldMesh);
+                            //scene.remove(oldMesh);
                             removedMesh.push(oldMesh);
                             ants.push(ant);
                     }
@@ -624,12 +650,12 @@ function annotationsToNewMask(){
         mask[zCoord][yCoord][xCoord] = ant.cellNum;
     }
     console.log(mask)
-    fetch("http://127.0.0.1:8080/home", {
+    fetch("http://127.0.0.1:8080/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({newMask: newMask, data: mask, filename: mask_data_path }),
+        body: JSON.stringify({action: "save", newMask: newMask, data: mask, filename: mask_data_path }),
       })
         .then(function (response) {
           if (!response.ok) {
@@ -666,12 +692,12 @@ function annotationsToModifyMask(){
         totalMask[zCoord][yCoord][xCoord] = ant.cellNum;
     }
 
-    fetch("http://127.0.0.1:8080/home", {
+    fetch("http://127.0.0.1:8080/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({newMask: newMask, data: totalMask, filename: mask_data_path }),
+        body: JSON.stringify({action: "save",newMask: newMask, data: totalMask, filename: mask_data_path }),
       })
         .then(function (response) {
           if (!response.ok) {
@@ -715,4 +741,232 @@ function chunkToCoords(chunkNum){
         default:
             return null;
     }
+}
+
+
+function toggleMask(toggle){
+    if(toggle){
+        for(let ant of ants){
+            scene.add(ant.meshObj)
+        }
+    } else {
+        for(let ant of ants){
+            scene.remove(ant.meshObj);
+        }
+        for(let m of allMesh){
+            scene.add(m)
+        }
+    }
+}
+
+function removeCellAnt(cellNum){
+    for(let ant of ants){
+        if(ant.cellNum == cellNum){
+            scene.remove(ant.meshObj);
+        }
+    }
+    ants = ants.filter((m)=>{
+        if(m.cellNum == cellNum){
+            return false;
+        }
+        return true;
+    })
+}
+
+
+function markCellCentre(){
+    let castedObjects = checkIntersection();
+    if(castedObjects != null && castedObjects.antItem != null){
+        let pos = castedObjects.mItem.position;
+        let normal = castedObjects.intersect.face.normal.clone();
+        const cellNum = castedObjects.antItem.cellNum;
+        let filteredCell= filterCells(cellNum);
+        let line = []
+        while(posToAnt(pos, filteredCell)){
+            line.push(pos.clone());
+            pos.x -= normal.x*voxelSize;
+            pos.y -= normal.y*voxelSize;
+            pos.z -= normal.z*voxelSize;
+        }
+        console.log("marks")
+        console.log(currentMark)
+        if(currentMark.line1.length == 0){
+            currentMark.line1 = line;
+        } else {
+            currentMark.line2 = line;
+            getNearestPoints(currentMark.line1, currentMark.line2)
+
+            currentMark.line1 = [];
+            currentMark.line2 = [];
+        }
+    }
+}
+
+function filterCells(cellNum){
+    let oneCell = ants.filter((m)=>{
+        if(m.cellNum == cellNum){
+            return true;
+        }
+        return false;
+    })
+    return oneCell
+}
+
+function posToAnt(pos, cell){
+    for(let c of cell){
+        if(equals(c.meshObj.position, pos)){
+            return true
+        }
+    }
+    return null
+}
+
+function getNearestPoints(line1, line2){
+    let answer = {shortestDistance: undefined, point1: new THREE.Vector3(), point2: new THREE.Vector3()}
+    for(let pos1 of line1){
+        for(let pos2 of line2){
+            let distance = pos1.distanceTo(pos2);
+            if(answer.shortestDistance == undefined || distance < answer.shortestDistance){
+                answer.shortestDistance = distance;
+                answer.point1 = pos1;
+                answer.point2 = pos2;
+            }
+        }
+    }
+    let finalPos = new THREE.Vector3();
+    finalPos.x = Math.round((answer.point1.x + answer.point2.x)/2*10)/10
+    finalPos.y = Math.round((answer.point1.y + answer.point2.y)/2*10)/10
+    finalPos.z = Math.round((answer.point1.z + answer.point2.z)/2*10)/10
+    markedCell.push(finalPos)
+}
+
+function separateCells(markedCell, mask, boundBox, cellNum){
+    /*
+    needed:
+    - mask (over bounding box)
+    - cell markers
+    - shift from absolute to bounding box coords and back
+    - next cell num
+    */
+
+
+    let newMask = [];
+    let lowPoints = new THREE.Vector3()
+    lowPoints.copy(boundBox.min)
+    lowPoints.multiplyScalar(10)
+    lowPoints.x = Math.round(lowPoints.x)
+    lowPoints.y = Math.round(lowPoints.y)
+    lowPoints.z = Math.round(lowPoints.z)
+    let highPoints = new THREE.Vector3()
+    highPoints.copy(boundBox.max)
+
+    highPoints.multiplyScalar(10);
+    highPoints.x = Math.round(highPoints.x);
+    highPoints.y = Math.round(highPoints.y);
+    highPoints.z = Math.round(highPoints.z);
+    
+
+    for(let z = lowPoints.z; z <= highPoints.z; z++){
+        let z_row = []
+        for(let y = lowPoints.y; y<= highPoints.y; y++){
+            let y_row = []
+            for(let x = lowPoints.x; x<=highPoints.x; x++){
+                let cNum = mask[z][y][x];
+                if(cNum == cellNum){
+                    y_row.push(true)
+                } else {
+                    y_row.push(false)
+                }
+            }
+            z_row.push(y_row);
+        }
+        newMask.push(z_row);
+    }
+
+    let updatedCells = [];
+
+    for (let cell of markedCell){
+        let newPos = new THREE.Vector3();
+        newPos.copy(cell)
+        lowPoints.multiplyScalar(0.1);
+        newPos.sub(lowPoints);
+        newPos.multiplyScalar(10);
+        newPos.x = Math.round(newPos.x);
+        newPos.y = Math.round(newPos.y);
+        newPos.z = Math.round(newPos.z);
+
+        updatedCells.push(newPos);
+        lowPoints.multiplyScalar(10);
+    }
+    fetch("http://127.0.0.1:8080/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({action: "split", mask: newMask, cells: updatedCells, currCell: cellNumbers.currNum, nextCell: cellNumbers.nextNum }),
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error(
+              "Network response was not ok " + response.statusText
+            );
+          }
+          return response.json();
+        })
+        .then(function (data) {
+            updateAnts(data.labels, lowPoints)
+            console.log("Server response:", data);
+        })
+        .catch(function (error) {
+          console.error(
+            "There has been a problem with your fetch operation:",
+            error
+          );
+        });
+}
+
+function updateAnts(newCellMask, lowPoints){
+    let blank = true
+    lowPoints.multiplyScalar(0.1)
+    for(let z = 0; z< newCellMask.length; z++){
+        for(let y = 0; y< newCellMask[z].length; y++){
+            for(let x = 0; x < newCellMask[z][y].length; x++){
+                let newCellNum = newCellMask[z][y][x];
+                
+                if(newCellNum > 0){
+                    let cellPos = new THREE.Vector3(x*voxelSize + lowPoints.x, y*voxelSize+lowPoints.y, z*voxelSize+lowPoints.z);
+                    
+                    for(let ant of ants){
+                        
+                        if(equals(ant.meshObj.position, cellPos)){
+                            console.log("Here")
+                            ant.meshObj.material.color.set(getAntColour(newCellNum%15).code)
+                            ant.cellNum = newCellNum
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+function getBoundBox(cellNum){
+    let filteredCells = filterCells(cellNum);
+    let starter = filteredCells[0].meshObj.position
+    let min = new THREE.Vector3(starter.x, starter.y, starter.z);
+    let posmax = new THREE.Vector3(starter.x, starter.y, starter.z);
+
+    for(let cell of filteredCells){
+        let pos = cell.meshObj.position;
+        if(pos.x <= min.x){min.x = pos.x};
+        if(pos.y <= min.y){min.y = pos.y};
+        if(pos.z <= min.z){min.z = pos.z};
+        if(pos.x >= posmax.x){
+            posmax.x = pos.x}
+        if(pos.y >= posmax.y){posmax.y = pos.y};
+        if(pos.z >= posmax.z){posmax.z = pos.z};
+    }
+
+    return {min: min, max: posmax};
 }
