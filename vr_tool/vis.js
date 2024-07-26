@@ -7,7 +7,7 @@ import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
 import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { Mask, Ann } from "./mask.js"
+import { Mask, Ann, quickFetch} from "./mask.js"
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // General scene elements
@@ -92,48 +92,12 @@ function init(){
     const ambientLight = new THREE.AmbientLight(0xffffff); // White light
     scene.add(ambientLight);
 
+    // Add a directional light
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(1, 1, 1).normalize();
+    scene.add(directionalLight);
+
     mask = new Mask(scene);
-
-    // Setup HUD
-    scoreRenderer = new CSS2DRenderer();
-    scoreRenderer.setSize(window.innerWidth, window.innerHeight);
-    scoreRenderer.domElement.style.position = 'absolute';
-    scoreRenderer.domElement.style.top = '0px'
-    scoreRenderer.domElement.style.pointerEvents = 'none';
-    document.body.appendChild(scoreRenderer.domElement);
-
-    // Create Text For HUD and Position it
-    let canvas = document.createElement('canvas');
-    let context = canvas.getContext('2d');
-    context.font = '40px Arial';
-    context.fillStyle = 'white';
-    context.fillText(`Current Cell: ${cellNumbers.currNum}`, 0, 50, 300);
-    let texture = new THREE.CanvasTexture(canvas);
-    let material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    sprite = new THREE.Sprite(material);
-    sprite.scale.setScalar(1);
-    sprite.position.set(-6.5,1,-2);
-
-    // Background for HUD
-    const background = new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: true}));
-    background.position.set(-0.33,0.04,-0.1);
-
-    // Add HUD to scene
-    camera.add(background);
-    camera.add(sprite);
-
-    // Repeat with colour
-    canvas = document.createElement('canvas');
-    context = canvas.getContext('2d');
-    context.font = '40px Arial';
-    context.fillStyle = 'white';
-    context.fillText(`Current Colour: ${getAntColour(cellColours.currCol).name}`, 0, 50, 300);
-    texture = new THREE.CanvasTexture(canvas);
-    material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    sprite = new THREE.Sprite(material);
-    sprite.scale.setScalar(1);
-    sprite.position.set(-6.5,0.7,-2);
-    camera.add(sprite);
 
     // setup VR controllers
     controller1 = renderer.xr.getController(0);
@@ -159,19 +123,12 @@ function init(){
     hand2 = renderer.xr.getHand(1);
     scene.add(hand2);
 
-    // create annotating box for controller
-    let box = new THREE.BoxGeometry(0.2,0.2,0.2);
-    let wireBox = new THREE.WireframeGeometry(box);
-    vrLine = new THREE.LineSegments(wireBox, new THREE.MeshBasicMaterial({color: getAntColour(cellColours.currCol).code}));
-    console.log(vrLine.material.color)
-    vrLine.position.set(0,0.1,-0.1);
-    vrLine.rotation.x += Math.PI/6;
-    vrCube = new THREE.Box3().setFromObject(vrLine);
     const lineGeom = new THREE.BufferGeometry();
     lineGeom.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
     controlLine = new THREE.Line(lineGeom)
     controller1.add(vrLine);
     controller1.add(controlLine);
+    controller1.scale.set(0.1,0.1,0.1);
 
     // access gamepad for movement
     controller1.addEventListener( 'connected', (e) => {
@@ -181,7 +138,7 @@ function init(){
     // add selection with line on controller for right trigger
     controller1.addEventListener('selectstart', onRightTriggerPress);
     // make the annptating button attached to squeeze right
-    controller1.addEventListener('squeezestart', colour);
+    controller1.addEventListener('squeezestart', onRightSqueeze);
     // Change to next cell for annotating
     controller2.addEventListener('selectstart', onLeftTriggerPress);
     // Open and close GUI
@@ -196,22 +153,22 @@ function init(){
 
     // Build out GUI
     gui = new GUI({width: 300});
-    gui.add(volconfig, 'threshMin', 0, 5000, 10).onFinishChange(load);
-    gui.add(volconfig, 'threshMax', 0, 5000, 10).onFinishChange(load);
-    gui.add(volconfig, 'chunkNum', 0,7, 1).onFinishChange(fullReload);
-    gui.add(volconfig, 'cubeSize', 0, 10, 1).onFinishChange(()=>{
-        vrLine.scale.setScalar(volconfig.cubeSize)
-    });
-    gui.add(volconfig, 'removeAnnotations', 0, 1, 1);
-    gui.add(volconfig, 'showMask',0,1,1).onFinishChange(()=>{toggleMask(volconfig.showMask)})
-    gui.add({save: ()=>{
-        if(!newMask){
-            annotationsToNewMask()
-        } else {
-            annotationsToModifyMask();
-        }
-    }}, 'save')
-    gui.domElement.style.visibility = 'hidden';
+    // gui.add(volconfig, 'threshMin', 0, 5000, 10).onFinishChange(load);
+    // gui.add(volconfig, 'threshMax', 0, 5000, 10).onFinishChange(load);
+    // gui.add(volconfig, 'chunkNum', 0,7, 1).onFinishChange(fullReload);
+    // gui.add(volconfig, 'cubeSize', 0, 10, 1).onFinishChange(()=>{
+    //     vrLine.scale.setScalar(volconfig.cubeSize)
+    // });
+    // gui.add(volconfig, 'removeAnnotations', 0, 1, 1);
+    // gui.add(volconfig, 'showMask',0,1,1).onFinishChange(()=>{toggleMask(volconfig.showMask)})
+    // gui.add({save: ()=>{
+    //     if(!newMask){
+    //         annotationsToNewMask()
+    //     } else {
+    //         annotationsToModifyMask();
+    //     }
+    // }}, 'save')
+    // gui.domElement.style.visibility = 'hidden';
 
     // make GUI interactive within VR
     group = new InteractiveGroup();
@@ -258,19 +215,12 @@ function init(){
             newMask = false;
         }
 
-        // load();
-        // if(!newMask){
-        //     console.log('mask')
-        //     getAllMaskData();
-        //     maskLoader();
-        // }
         newLoad(mask_data_path)
         document.getElementById('loaded').innerHTML = "Image Loaded"
         document.body.appendChild( VRButton.createButton( renderer ) );
         
         
     })
-
 
     // set render loop
     renderer.setAnimationLoop(animate);
@@ -302,81 +252,50 @@ function checkIntersection(meshList){
     return null;
 }
 
-// to check if positions are equal
-// built in one was not working
-function equals(a, b){
-    a.multiplyScalar(10)
-    b.multiplyScalar(10)
-
-    if(Math.round(a.x) == Math.round(b.x)
-         && Math.round(a.y) == Math.round(b.y) 
-        && Math.round(a.z) == Math.round(b.z)){
-            a.multiplyScalar(0.1)
-            b.multiplyScalar(0.1)
-        return true;
-    }
-    a.multiplyScalar(0.1)
-    b.multiplyScalar(0.1)
-    return false
-}
 
 function onRightTriggerPress(event) {
-    /*
-    if(segIP){
-        updateAnts()
-    }
 
-    // used to set the cell annotator to the cell that it first intersects
-    let castedObjects = checkIntersection(allMeshObj.allMesh.filter((m)=>{
-        if(allMeshObj.hidden.includes(m)){
-            return false;
-        } else {
-            return true;
+    if(!zoomed){
+
+        let meshList = []
+        for(let ann of mask.anns){
+            meshList.push(ann.meshObj)
         }
-    }));
-    console.log(castedObjects)
-    if(castedObjects != null && castedObjects.antItem != null){
-        cellColours.currCol = castedObjects.antItem.colourNum;
-        cellNumbers.currNum = castedObjects.antItem.cellNum;
-        if(volconfig.removeAnnotations == 1){
-            mask.removeAnn(cellNumbers.currNum)
-        } else {
-            if(mask.hiddenAnns.length > 0){
-                markCellCentre(castedObjects);
-            } else {
-                clearAllButOne(cellNumbers.currNum)
+
+        let castedObjects = checkIntersection(meshList);
+
+        if(castedObjects != null){
+            let ann = mask.meshToAnn(castedObjects.mItem);
+            if(ann != undefined){
+                mask.highlightOne(ann.cellNum)
+                ann.meshObj.material.opacity = 0.5
+                ann.meshObj.material.transparent = true;
+                zoomed = true;
+                mask.currentCell = ann.cellNum
+                    
             }
         }
-        render()
-    }
-    vrLine.material.color.set(getAntColour(cellNumbers.currNum%15).code)
-    */
-   if(!zoomed){
-
-    let meshList = []
-    for(let ann of mask.anns){
-        meshList.push(ann.meshObj)
-    }
-
-    let castedObjects = checkIntersection(meshList);
-
-    if(castedObjects != null){
-        let ann = mask.meshToAnn(castedObjects.mItem);
-        if(ann != undefined){
-            mask.highlightOne(ann.cellNum)
-            ann.meshObj.material.opacity = 0.9
-            ann.meshObj.material.transparent = true;
-            zoomed = true;
-            mask.currentCell = ann.cellNum
-                
-        }
-    }
     } else {
-        markCellCentre()
+        markCellCentre(false);
+    }
+}
+
+function onRightSqueeze(event){
+    if(!zoomed){
+        let meshList = []
+        for(let ann of mask.anns){
+            meshList.push(ann.meshObj);
+        }
+
+        let castedObjects = checkIntersection(meshList);
+        if(castedObjects != null){
+            let ann = mask.meshToAnn(castedObjects.mItem);
+            mask.markForRemove(ann);
+        }
+    } else {
+        markCellCentre(true);
     }
 
-
-    
 }
 
 function onLeftTriggerPress(event){
@@ -386,12 +305,9 @@ function onLeftTriggerPress(event){
         separateCells(markedCell, mask);
         markedCell = [];
     } else {
-        increaseCellColour();
-        cellNumbers.currNum = cellNumbers.nextNum;
-        cellNumbers.nextNum += 1;
+        mask.removeAllAnns();
     }
     
-    vrLine.material.color.set(getAntColour(cellNumbers.currNum%15).code)
 }
 
 function onLeftTriggerSqueeze(event){
@@ -441,264 +357,37 @@ function getAntColour(colour){
     }
 }
 
-function increaseCellColour(){
-    // used to increment to the next cell colour max 15
-    cellColours.currCol = cellColours.nextCol
-    cellColours.nextCol +=1;
-    if(cellColours.nextCol > 14){
-        cellColours.nextCol = 0;
-    }
-}
-
-function colour(){
-    /* this function is used to annotate or de-annotate cells 
-    based on the selection in the GUI*/
-
-    vrCube = new THREE.Box3().setFromObject(vrLine);
-    let lowPoints = vrCube.min;
-    let highPoints = vrCube.max;
-    if(volconfig.removeAnnotations == 0){
-        // adding annotations
-        let selectedMesh = allMesh.filter(m =>{
-            if(m.position.x >= lowPoints.x && m.position.x <= highPoints.x){
-                if(m.position.y >= lowPoints.y && m.position.y <= highPoints.y){
-                    if(m.position.z >= lowPoints.z && m.position.z <= highPoints.z){
-                        return true;
-                    }
-                }
-            } 
-            return false;
-        });
-
-        for(let m of selectedMesh){
-            let currPos = m.position;
-            removedMesh.push(m);
-            //scene.remove(m);
-            m = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({color: getAntColour(cellColours.currCol).code, opacity: 0.5, transparent: true}));
-            scene.add(m)
-            m.position.set(currPos.x, currPos.y, currPos.z);
-            let newAnt = {meshObj: m, cellNum: cellNumbers.currNum, colourNum: cellColours.currCol};
-            ants.push(newAnt);
-        }
-
-        render();
-    } else {
-        // removing annotations
-        let selectedAnts = ants.filter(m => {
-            if(m.meshObj.position.x >= lowPoints.x && m.meshObj.position.x <= highPoints.x){
-                if(m.meshObj.position.y >= lowPoints.y && m.meshObj.position.y <= highPoints.y){
-                    if(m.meshObj.position.z >= lowPoints.z && m.meshObj.position.z <= highPoints.z){
-                        return true;
-                    }
-                }
-            } 
-            return false;
-        });
-        for (let m of selectedAnts){
-            scene.remove(m.meshObj);
-            removedAnts.push(m.meshObj);
-            for(let oldM of removedMesh){
-                if(oldM != null && m.meshObj.position.equals(oldM.position)){
-                    scene.add(oldM);
-                    ants.filter(item => item !=m);
-                    removedMesh.filter(item => item != oldM);
-                }
-            }
-        }
-        render();
-    }
-
-}
-
-function load(){
-    /* this function is used to load in all voxels of the image data
-    that are found within the predetermined chunk and fall within the user set intensity range */
-
-    return new Promise((resolve)=>{
-        if(refresh){
-            allMesh.forEach(mesh => scene.remove(mesh));
-            allMesh = [];
-        }
-        let vol;
-        new THREE.FileLoader().load( 'supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_im/1632_4096_2560.json', function ( volume ) {
-            volumeData = JSON.parse(volume);
-            vol = volumeData;
-            let chunkCoords = chunkToCoords(volconfig.chunkNum);
-            for(let z = volconfig.chunkZ*chunkCoords.z ; z< volconfig.chunkZ*chunkCoords.z + volconfig.chunkZ; z++){
-                for(let y = volconfig.chunkY*chunkCoords.y ; y< volconfig.chunkY*chunkCoords.y+ volconfig.chunkY; y++){
-                    for(let x = volconfig.chunkX*chunkCoords.x ; x< volconfig.chunkX*chunkCoords.x+ volconfig.chunkX; x++){
-                        let intensity = vol[z][y][x];
-                        
-                        if(intensity> volconfig.threshMin && intensity < volconfig.threshMax){
-                            let normal = (intensity-volconfig.threshMin) / (volconfig.threshMax - volconfig.threshMin)
-                            let colour = new THREE.Color(intensityToHexGrayscale(normal));
-                            let material = new THREE.MeshBasicMaterial({color: colour/* opacity: normal, transparent: true*/})
-                            let geometry = new THREE.BoxGeometry(voxelSize,voxelSize,voxelSize);
-                            let mesh = new THREE.Mesh(geometry, material);
-                            mesh.position.set(x*voxelSize,y*voxelSize,z*voxelSize);
-                            scene.add(mesh);
-                            allMesh.push(mesh)
-                            allMeshObj.allMesh.push(mesh);
-                        } 
-                    }
-                }
-            }
-            console.log("Done")
-            refresh = true;
-            render();
-            resolve();
-        });
-    });
-}
-
-function intensityToHexGrayscale(intensity) {
-    // produces hexadecimal code for grayscale from a normalized intensity
-
-    // Clamp the intensity to ensure it's between 0 and 1.
-    if(intensity > 1) { intensity = 1};
-    if(intensity < 0){intensity = 0};
-
-    // Convert the normalized intensity to a value between 0 and 255.
-    const value = Math.round(intensity * 255);
-    
-    // Convert the value to a two-digit hexadecimal string.
-    const hex = value.toString(16).padStart(2, '0');
-    
-    // Return the grayscale color in hexadecimal format.
-    return `#${hex}${hex}${hex}`;
-}
-
-let maskColours = []
-
-function getAllMaskData(){
-    // get the full mask data to make changes to (includes more than just the chunk)
-    return new Promise((resolve)=>{
-        new THREE.FileLoader().load( 'supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_cellseg3d/1632_4096_2560.json' , function ( volume ) {
-        totalMask = JSON.parse(volume);
-        resolve();
-        });
-    });
-}
-
-function maskLoader(){
-    // loads and renders a specfic chunk of the mask data
-    return new Promise((resolve)=>{
-        if(refresh){
-            ants.forEach(ant => scene.remove(ant.meshObj));
-            ants = [];
-        }
-        new THREE.FileLoader().load( mask_data_path, function ( volume ) {
-            let maskData = JSON.parse(volume);
-            mask.totalMask = maskData;
-            let chunkCoords = chunkToCoords(volconfig.chunkNum);
-            let maxCNum = 0;
-            for(let z = volconfig.chunkZ*chunkCoords.z ; z< volconfig.chunkZ*chunkCoords.z + volconfig.chunkZ; z++){
-                for(let y = volconfig.chunkY*chunkCoords.y ; y< volconfig.chunkY*chunkCoords.y+ volconfig.chunkY; y++){
-                    for(let x = volconfig.chunkX*chunkCoords.x ; x< volconfig.chunkX*chunkCoords.x + volconfig.chunkX; x++){
-                        let cellNum =maskData[z][y][x];
-                        if(cellNum > maxCNum){
-                            maxCNum = cellNum;
-                        }
-                        if(cellNum !=0){
-                            let material = new THREE.MeshBasicMaterial({color: getAntColour(cellNum%15).code, opacity: 0.5, transparent: true})
-                            let geometry = new THREE.BoxGeometry(voxelSize,voxelSize,voxelSize);
-                            let mesh = new THREE.Mesh(geometry, material);
-                            mesh.position.set(x*voxelSize,y*voxelSize,z*voxelSize);
-                            let ann = new Ann(mesh, cellNum);
-
-                            mask.addAnn(ann);
-                        }
-                    }
-                }
-            }
-            console.log("Done")
-
-            refresh = true;
-            cellNumbers.currNum = maxCNum;
-            cellNumbers.nextNum = maxCNum +1;
-            render();
-            resolve();
-        });
-    });
-
-}
 
 function newLoad(link){
-    console.log(link)
+    function loading(data) {
+        let loader = new OBJLoader();
+        for(let object of data.objPaths){
+            loader.load(object.path, (obj)=>{
+                obj.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.material.color.set(getAntColour((object.cell_num)%15).code);
+                        child.material.side = THREE.DoubleSide
+                        let shrinkSize = 0.1
+                        child.scale.set(shrinkSize,shrinkSize,shrinkSize)
+                        
+                        child.position.set(object.min_coords.x*shrinkSize, object.min_coords.y*shrinkSize, object.min_coords.z*shrinkSize);
+                        
+                        let ann = new Ann(child, object.cell_num);
+                        mask.addAnn(ann)
+                    }
+                });
 
-    fetch("http://127.0.0.1:8080/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({action: "load", mask_link: link }),
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error(
-              "Network response was not ok " + response.statusText
-            );
-          }
-          return response.json();
-        })
-        .then(function (data) {
-            let loader = new OBJLoader();
-            for(let object of data.objPaths){
-                loader.load(object.path, (obj)=>{
-                    obj.traverse(function (child) {
-                        if (child.isMesh) {
-                            child.material.color.set(getAntColour((object.cell_num)%15).code);
-                            child.material.side = THREE.DoubleSide
-                            // to keep true to scale (Need to find out why its like this)
-                            child.position.set(0,0,0)
-                            // child.scale.set(1.0,1.0,1.0)
-                            
-                            child.rotation.y = Math.PI/2
-                            child.position.set(object.min_coords.x, object.min_coords.y, object.min_coords.z+ (object.max_coords.z - object.min_coords.z));
-                            
-                            let ann = new Ann(child, object.cell_num);
-                            mask.addAnn(ann)
-                        }
-                    });
-
-                })
-            }
-
-
-          console.log("Server response:", data);
-        })
-        .catch(function (error) {
-          console.error(
-            "There has been a problem with your fetch operation:",
-            error
-          );
-        });
-
-}
-
-function fullReload(){
-    load();
-    if(!newMask){
-        maskLoader();
-    }
-}
-
-
-function antToMesh(ant){
-    // find the mesh that exist at the same location as an annotation
-    for(let m of allMesh){
-        if(equals(m.position, ant.meshObj.position)){
-            return m;
+            })
         }
     }
-    return null;
-}
+    quickFetch({action: "load", mask_link: link }, loading);
 
+
+}
 
 function onWindowResize() {
 
     renderer.setSize( window.innerWidth, window.innerHeight );
-    scoreRenderer.setSize(this.window.innerWidth, this.window.innerHeight);
 
     const aspect = window.innerWidth / window.innerHeight;
 
@@ -719,100 +408,9 @@ function render() {
 
 function animate(){
     renderer.render(scene, camera)
-    scoreRenderer.render(scene, camera);
 }
 
-function annotationsToNewMask(){
-    // produce a new mask for a specfied chunk of image data
-    let mask = []
-    for(let z = volconfig.chunkZ*volconfig.chunkNum ; z< volconfig.chunkZ*volconfig.chunkNum + volconfig.chunkZ; z++){
-        let yLayer = []
-        for(let y = volconfig.chunkY*volconfig.chunkNum ; y< volconfig.chunkY*volconfig.chunkNum + volconfig.chunkY; y++){
-            let xLayer = []
-            for(let x = volconfig.chunkX*volconfig.chunkNum ; x< volconfig.chunkX*volconfig.chunkNum + volconfig.chunkX; x++){
-                xLayer.push[0];
-            }
-            yLayer.push(xLayer);
-        }
-        mask.push(yLayer);
-    }
-    for(let ant of ants){
-        let xCoord = Math.floor(ant.meshObj.position.x/0.1);
-        let yCoord = Math.floor(ant.meshObj.position.y/0.1);
-        let zCoord = Math.floor(ant.meshObj.position.z/0.1);
 
-        mask[zCoord][yCoord][xCoord] = ant.cellNum;
-    }
-    console.log(mask)
-    fetch("http://127.0.0.1:8080/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({action: "save", newMask: newMask, data: mask, filename: mask_data_path }),
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error(
-              "Network response was not ok " + response.statusText
-            );
-          }
-          return response.json();
-        })
-        .then(function (data) {
-          console.log("Server response:", data);
-        })
-        .catch(function (error) {
-          console.error(
-            "There has been a problem with your fetch operation:",
-            error
-          );
-        });
-    return mask;
-}
-
-function annotationsToModifyMask(){
-    // modify an existing mask based on the annotations added and removed to a chunk
-    for (rAnt of removedAnts){
-        let xCoord = Math.floor(rAnt.position.x/0.1);
-        let yCoord = Math.floor(rAnt.position.y/0.1);
-        let zCoord = Math.floor(rAnt.position.z/0.1);
-        totalMask[zCoord][yCoord][xCoord] = 0;
-    }
-    for(let ant of ants){
-        let xCoord = Math.floor(ant.meshObj.position.x/0.1);
-        let yCoord = Math.floor(ant.meshObj.position.y/0.1);
-        let zCoord = Math.floor(ant.meshObj.position.z/0.1);
-        totalMask[zCoord][yCoord][xCoord] = ant.cellNum;
-    }
-
-    fetch("http://127.0.0.1:8080/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({action: "save",newMask: newMask, data: totalMask, filename: mask_data_path }),
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error(
-              "Network response was not ok " + response.statusText
-            );
-          }
-          return response.json();
-        })
-        .then(function (data) {
-          console.log("Server response:", data);
-        })
-        .catch(function (error) {
-          console.error(
-            "There has been a problem with your fetch operation:",
-            error
-          );
-        });
-    
-
-}
 
 function chunkToCoords(chunkNum){
     switch(chunkNum){
@@ -838,170 +436,29 @@ function chunkToCoords(chunkNum){
 }
 
 
-function toggleMask(toggle){
-    if(toggle){
-        for(let ant of ants){
-            scene.add(ant.meshObj)
-        }
-    } else {
-        for(let ant of ants){
-            scene.remove(ant.meshObj);
-        }
-    }
-}
 
-function removeCellAnt(cellNum){
-    for(let ant of ants){
-        if(ant.cellNum == cellNum){
-            scene.remove(ant.meshObj);
-        }
-    }
-    ants = ants.filter((m)=>{
-        if(m.cellNum == cellNum){
-            return false;
-        }
-        return true;
-    })
-}
-
-
-function markCellCentre(){
-    // let pos = new THREE.Vector3();
-    // pos.copy(castedObjects.mItem.position);
-    // let normal = castedObjects.intersect.face.normal.clone();
-    // const cellNum = castedObjects.antItem.cellNum;
-    // let filteredCell= filterCells(cellNum);
-    // let line = []
-    // while(posToAnt(pos, filteredCell)){
-    //     line.push(pos.clone());
-    //     pos.x -= normal.x*voxelSize;
-    //     pos.y -= normal.y*voxelSize;
-    //     pos.z -= normal.z*voxelSize;
-    // }
-
-    // if(currentMark.line1.length == 0){
-    //     currentMark.line1 = line;
-    // } else {
-    //     currentMark.line2 = line;
-    //     getNearestPoints(currentMark.line1, currentMark.line2)
-
-    //     currentMark.line1 = [];
-    //     currentMark.line2 = [];
-    // }
-
+function markCellCentre(remove){
 
     let pos = new THREE.Vector3();
     pos.copy(controller1.position);
-
+    pos.multiplyScalar(10);
+    pos.remove = remove;
     markedCell.push(pos);
 
-    let cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:0xff000000}));
-    cube.position.set(pos.x,pos.y,pos.z);
+    let cube = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.1), new THREE.MeshBasicMaterial({color:0xffffff}));
+    cube.position.set(pos.x*0.1,pos.y*0.1,pos.z*0.1);
     scene.add(cube);
     mask.segHelpers.push(cube)
 
 }
 
 
-
-function getNearestPoints(line1, line2){
-    let answer = {shortestDistance: undefined, point1: new THREE.Vector3(), point2: new THREE.Vector3()}
-    for(let pos1 of line1){
-        for(let pos2 of line2){
-            let distance = pos1.distanceTo(pos2);
-            if(answer.shortestDistance == undefined || distance < answer.shortestDistance){
-                answer.shortestDistance = distance;
-                answer.point1 = pos1;
-                answer.point2 = pos2;
-            }
-        }
-    }
-    let finalPos = new THREE.Vector3();
-    finalPos.x = Math.round((answer.point1.x + answer.point2.x)/2*10)/10.0
-    finalPos.y = Math.round((answer.point1.y + answer.point2.y)/2*10)/10.0
-    finalPos.z = Math.round((answer.point1.z + answer.point2.z)/2*10)/10.0
-    markedCell.push(finalPos)
-}
-
 function separateCells(markedCell, mask, boundBox, cellNum){
-    // make marker points relative
-
-    // let newMask = [];
-    // let lowPoints = new THREE.Vector3()
-    // lowPoints.copy(boundBox.min)
-    // lowPoints.multiplyScalar(10)
-    // lowPoints.x = Math.round(lowPoints.x)
-    // lowPoints.y = Math.round(lowPoints.y)
-    // lowPoints.z = Math.round(lowPoints.z)
-    // let highPoints = new THREE.Vector3()
-    // highPoints.copy(boundBox.max)
-
-    // highPoints.multiplyScalar(10);
-    // highPoints.x = Math.round(highPoints.x);
-    // highPoints.y = Math.round(highPoints.y);
-    // highPoints.z = Math.round(highPoints.z);
-    
-
-    // for(let z = lowPoints.z; z <= highPoints.z; z++){
-    //     let z_row = []
-    //     for(let y = lowPoints.y; y<= highPoints.y; y++){
-    //         let y_row = []
-    //         for(let x = lowPoints.x; x<=highPoints.x; x++){
-    //             let cNum = mask[z][y][x];
-    //             if(cNum == cellNum){
-    //                 y_row.push(true)
-    //             } else {
-    //                 y_row.push(false)
-    //             }
-    //         }
-    //         z_row.push(y_row);
-    //     }
-    //     newMask.push(z_row);
-    // }
-
-    // let updatedCells = [];
-
-    // for (let cell of markedCell){
-    //     let newPos = new THREE.Vector3();
-    //     newPos.copy(cell)
-    //     lowPoints.multiplyScalar(0.1);
-    //     newPos.sub(lowPoints);
-    //     newPos.multiplyScalar(10);
-    //     newPos.x = Math.round(newPos.x);
-    //     newPos.y = Math.round(newPos.y);
-    //     newPos.z = Math.round(newPos.z);
-
-    //     updatedCells.push(newPos);
-    //     lowPoints.multiplyScalar(10);
-    // }
-    fetch("http://127.0.0.1:8080/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({action: "split", markers: markedCell, curr_cell: mask.currentCell, next_cell: mask.getNextCellNum()}),
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error(
-              "Network response was not ok " + response.statusText
-            );
-          }
-          return response.json();
-        })
-        .then(function (data) {
-            console.log("Server response:", data);
-            updateAnns(data.objects)
-        })
-        .catch(function (error) {
-          console.error(
-            "There has been a problem with your fetch operation:",
-            error
-          );
-        });
+    quickFetch({action: "split", markers: markedCell, curr_cell: mask.currentCell, next_cell: mask.getNextCellNum()}, updateAnns);
 }
 
-function updateAnns(objs){
+function updateAnns(data){
+    let objs = data.objects
     let loader = new OBJLoader();
     for(let object of objs){
         mask.removeAnn(object.cell_num)
@@ -1012,10 +469,10 @@ function updateAnns(objs){
                     child.material.side = THREE.DoubleSide
                     // to keep true to scale (Need to find out why its like this)
                     child.position.set(0,0,0)
-                    // child.scale.set(1.0,1.0,1.0)
+                    child.scale.set(0.1,0.1,0.1)
                     
-                    child.rotation.y = Math.PI/2
-                    child.position.set(object.min_coords.x, object.min_coords.y, object.min_coords.z+ (object.max_coords.z - object.min_coords.z));
+                    // child.rotation.y = Math.PI/2
+                    child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
                     
                     let ann = new Ann(child, object.cell_num);
                     mask.addAnn(ann)
@@ -1026,94 +483,7 @@ function updateAnns(objs){
     }
     zoomed = false;
     mask.removeSegHelpers();
-    // mask.unhighlight();
+    mask.unhighlight();
         
 
-}
-
-
-function updateAnts(newCellMask, lowPoints){
-
-    let blank = true
-    lowPoints.multiplyScalar(0.1)
-    for(let z = 0; z< newCellMask.length; z++){
-        for(let y = 0; y< newCellMask[z].length; y++){
-            for(let x = 0; x < newCellMask[z][y].length; x++){
-                let newCellNum = newCellMask[z][y][x];
-                
-                if(newCellNum > 0){
-                    let cellPos = new THREE.Vector3(x*voxelSize + lowPoints.x, y*voxelSize+lowPoints.y, z*voxelSize+lowPoints.z);
-                    
-                    for(let a of mask.anns){
-                        if(equals(a.meshObj.position, cellPos)){
-                            a.meshObj.material.color.set(getAntColour(newCellNum%15).code)
-                            a.cellNum = newCellNum
-                        }
-                    }
-                }
-            }
-        }
-    }
-    returnAllHidden();
-}
-
-function getBoundBox(cellNum){
-    let filteredCells = filterCells(cellNum);
-    let starter = filteredCells[0].meshObj.position
-    let min = new THREE.Vector3(starter.x, starter.y, starter.z);
-    let posmax = new THREE.Vector3(starter.x, starter.y, starter.z);
-
-    for(let cell of filteredCells){
-        let pos = cell.meshObj.position;
-        if(pos.x <= min.x){min.x = pos.x};
-        if(pos.y <= min.y){min.y = pos.y};
-        if(pos.z <= min.z){min.z = pos.z};
-        if(pos.x >= posmax.x){posmax.x = pos.x}
-        if(pos.y >= posmax.y){posmax.y = pos.y};
-        if(pos.z >= posmax.z){posmax.z = pos.z};
-    }
-
-    return {min: min, max: posmax};
-}
-
-function filterCells(cellNum){
-    let oneCell = mask.anns.filter((m)=>{
-        if(m.cellNum == cellNum){
-            return true;
-        }
-        return false;
-    })
-    return oneCell
-}
-
-function posToAnt(pos, cell){
-    for(let c of cell){
-        if(equals(c.meshObj.position, pos)){
-            return true
-        }
-    }
-    return null
-}
-
-function clearAllButOne(cellNum){
-    console.log(mask.anns)
-    for(let a of mask.anns){
-        if(a.cellNum != cellNum){
-            mask.hideAnn(a);
-            let m = antToMesh(a);
-            scene.remove(m);
-            allMeshObj.hidden.push(m);
-        }
-    }
-}
-
-function returnAllHidden(){
-    while(allMeshObj.hidden.length > 0){
-        let m = allMeshObj.hidden.pop();
-        scene.add(m);
-    }
-    while(mask.hiddenAnns.length > 0){
-        let a = mask.hiddenAnns.pop();
-        scene.add(a.meshObj);
-    }
 }

@@ -3,7 +3,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-from vr_tool.create_cell_objects import all, full_segmentation
+from vr_tool.create_cell_objects import all, full_segmentation, removeCell
 
 mask = None
 
@@ -18,7 +18,6 @@ class RequestHandler(SimpleHTTPRequestHandler):
             parsed_data = json.loads(data.decode('utf-8'))
             if(parsed_data['action'] == "save"):
                 # write out mask
-                mask = parsed_data['data']
                 with open("file.json", 'w') as f:
                     f.write(json.dumps(mask))
 
@@ -28,24 +27,6 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "split"):
-                # mask = np.array(parsed_data['mask'])
-                # markers = np.zeros(mask.shape, np.int_)
-                # marker_positions = parsed_data['cells']
-                # print(marker_positions)
-                # next_cell_num = parsed_data['nextCell']
-                # curr_cell_num = parsed_data['currCell']
-                # first = True
-                # for mark in marker_positions:
-                #     if(first):
-                #         markers[(mark['z'], mark['y'],mark['x'])] = curr_cell_num
-                #         first = False
-                #     else:
-                #         markers[(mark['z'], mark['y'],mark['x'])] = next_cell_num
-                #         next_cell_num +=1
-
-                # np.set_printoptions(threshold=np.inf)
-                # gradient = filters.sobel(mask)
-                # labels = segmentation.watershed(gradient, markers, mask=mask)
                 markers = parsed_data['markers']
                 curr_cell_num = parsed_data['curr_cell']
                 next_cell_num = parsed_data['next_cell']
@@ -66,7 +47,17 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps(response_message).encode('utf-8'))
-
+            elif (parsed_data['action'] == "remove"):
+                for ann in parsed_data['remObjects']:
+                    mask = removeCell(mask, ann['cellNum'])
+                for num in np.nditer(mask):
+                    if(num == ann['cellNum']):
+                        print("NOPE")
+                response_message = {'message': 'Data received successfully.'}
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
 
 
         except json.JSONDecodeError:

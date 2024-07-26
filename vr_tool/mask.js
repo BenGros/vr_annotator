@@ -1,3 +1,5 @@
+
+
 export class Mask{
 
     constructor(scene){
@@ -7,20 +9,24 @@ export class Mask{
         this.hiddenAnns = [];
         this.scene = scene;
         this.currentCell = 0;
-        this.segHelpers = []
+        this.segHelpers = [];
+
     }
 
     addAnn(ann){
-        console.log("add")
         this.anns.push(ann);
         this.scene.add(ann.meshObj);
+    }
+
+    markForRemove(ann){
+            this.removedAnns.push(ann);
+            ann.meshObj.material.color.set(0x000000);
     }
 
     removeAnn(cellNum){
         for(let a of this.anns){
             if(a.cellNum == cellNum){
                 this.scene.remove(a.meshObj);
-                this.removedAnns.push(a); 
             }
         }
         this.anns = this.anns.filter((a)=>{
@@ -30,6 +36,41 @@ export class Mask{
             return true;
         })
     }
+
+    removeAllAnns(){
+        for(let ann of this.removedAnns){
+            this.removeAnn(ann.cellNum)
+        }
+
+        quickFetch({action: "remove", remObjects: this.removedAnns});
+
+        // fetch("http://127.0.0.1:8080/", {
+        //     method: "POST",
+        //     headers: {
+        //       "Content-Type": "application/json",
+        //     },
+        //     body: JSON.stringify({action: "remove", remObjects: this.removedAnns}),
+        //   })
+        //     .then(function (response) {
+        //       if (!response.ok) {
+        //         throw new Error(
+        //           "Network response was not ok " + response.statusText
+        //         );
+        //       }
+        //       return response.json();
+        //     })
+        //     .then(function (data) {
+        //         console.log("Server response:", data);
+        //     })
+        //     .catch(function (error) {
+        //       console.error(
+        //         "There has been a problem with your fetch operation:",
+        //         error
+        //       );
+        //     });
+
+    }
+    
 
     hideAnn(ann){
         this.scene.remove(ann.meshObj);
@@ -51,47 +92,11 @@ export class Mask{
 
     }
 
-    updateMask(mask_data_path){
-        // modify an existing mask based on the annotations added and removed to a chunk
-        for (let r of this.removedAnns){
-            let xCoord = Math.floor(r.position.x/0.1);
-            let yCoord = Math.floor(r.position.y/0.1);
-            let zCoord = Math.floor(r.position.z/0.1);
-            totalMask[zCoord][yCoord][xCoord] = 0;
-        }
-        for(let a of this.anns){
-            let xCoord = Math.floor(a.meshObj.position.x/0.1);
-            let yCoord = Math.floor(a.meshObj.position.y/0.1);
-            let zCoord = Math.floor(a.meshObj.position.z/0.1);
-            totalMask[zCoord][yCoord][xCoord] = a.cellNum;
-        }
 
-        fetch("http://127.0.0.1:8080/", {
-            method: "POST",
-            headers: {
-            "Content-Type": "application/json",
-            },
-            body: JSON.stringify({action: "save", data: totalMask, filename: mask_data_path }),
-        })
-            .then(function (response) {
-            if (!response.ok) {
-                throw new Error(
-                "Network response was not ok " + response.statusText
-                );
-            }
-            return response.json();
-            })
-            .then(function (data) {
-            console.log("Server response:", data);
-            })
-            .catch(function (error) {
-            console.error(
-                "There has been a problem with your fetch operation:",
-                error
-            );
-            });
-        
 
+
+    updateMask(){
+        quickFetch({action: "save"})
     }
     
     highlightOne(cellNum){
@@ -100,7 +105,7 @@ export class Mask{
                 console.log("Here")
                 this.hideAnn(ann);
             } else {
-                //ann.meshObj.scale.set(1,1,1)
+                ann.meshObj.scale.set(0.1,0.1,0.1)
 
             }
         }
@@ -139,21 +144,40 @@ export class Mask{
     }
 }
 
-class meshHolder {
-    constructor(all, hidden){
-        this.all = all;
-        this.hidden = hidden;
-    }
-
-    addMesh(scene, mesh){
-        this.all.push(mesh);
-        scene.add(mesh);
-    }
-}
 
 export class Ann {
     constructor(meshObj, cellNum){
         this.meshObj = meshObj;
         this.cellNum = cellNum;
     }
+}
+
+export function quickFetch(body, callFunc){
+    fetch("http://127.0.0.1:8080/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error(
+              "Network response was not ok " + response.statusText
+            );
+          }
+          return response.json();
+        })
+        .then(function (data) {
+            if(callFunc != null | callFunc != undefined){
+                callFunc(data);
+            }
+            console.log("Server response:", data);
+        })
+        .catch(function (error) {
+          console.error(
+            "There has been a problem with your fetch operation:",
+            error
+          );
+        });
 }

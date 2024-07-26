@@ -43,6 +43,7 @@ def create_cell_bound_box(mask, cell_num):
 
 
 def create_cell_mask(mask, bound_box, cell_num):
+    print(bound_box)
     cell_mask = np.zeros((int(bound_box[5]-bound_box[4] + 1), int(bound_box[3]-bound_box[2] + 1), int(bound_box[1]-bound_box[0] + 1)), np.int_)
     
     z = bound_box[4]
@@ -67,7 +68,8 @@ def create_cell_mask(mask, bound_box, cell_num):
 
 def create_cell_object(cell_mask, save_path):
     if(cell_mask.shape[0]>1 and cell_mask.shape[1]>1 and cell_mask.shape[2] >1):
-        verts, faces, normals, values = measure.marching_cubes(cell_mask, level=0.5)
+        correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
+        verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=0.5)
         # Prepare the faces array for PyVista
         faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
         # # Create a PyVista mesh from the marching cubes output
@@ -107,17 +109,15 @@ def calculate_midpoint(pos1, pos2):
 
 def separate_cells(mask, cell_num, markers, next_cell_num):
     all_cell_nums = []
-    all_cell_nums.append(cell_num)
+    all_cell_nums.append({"cell_num": cell_num, "remove": markers[0]['remove']})
     bound_box = create_cell_bound_box(mask, cell_num)
     print(bound_box)
     cell_mask = create_cell_mask(mask, bound_box, cell_num)
     marker_mask = np.zeros((cell_mask.shape), np.int_)
     count = 0
     next_c_num = next_cell_num
-    for mark in markers:
-        print(mark)
     while(count< len(markers)):
-        point = {"z": (bound_box[5] - bound_box[4]) - int(round(markers[count]['z'] - bound_box[4], 0)) + 1, "y": int(round(markers[count]['y']- bound_box[2],0)), "x": int(round(markers[count]['x']- bound_box[0],0))}
+        point = {"z": int(round(markers[count]['z'] - bound_box[4], 0)), "y": int(round(markers[count]['y']- bound_box[2],0)), "x": int(round(markers[count]['x']- bound_box[0],0))}
         if(count == 0):
             if(point['z']-1>=0):
                 marker_mask[point["z"]-1][point['y']][point['x']] = cell_num
@@ -130,7 +130,7 @@ def separate_cells(mask, cell_num, markers, next_cell_num):
             if(point['z']+1<(bound_box[5]-bound_box[4])):
                  marker_mask[point["z"]+1][point['y']][point['x']] = next_c_num
             marker_mask[point['z']][point['y']][point['x']]  = next_c_num
-            all_cell_nums.append(next_c_num)
+            all_cell_nums.append({"cell_num": next_c_num, "remove": markers[count]['remove']})
             next_c_num+=1
         count+=1
             
@@ -168,22 +168,29 @@ def make_new_objects(up_mask, updated_cell):
     all_obj_paths = []
 
     for cell in updated_cell:
-        obj_info = {"path": None, "min_coords": None, "max_coords": None, "cell_num": cell}
-        bound_box = create_cell_bound_box(up_mask, cell)
+        if(not cell['remove']):
+            obj_info = {"path": None, "min_coords": None, "max_coords": None, "cell_num": cell['cell_num']}
+            bound_box = create_cell_bound_box(up_mask, cell['cell_num'])
+            cell_mask = create_cell_mask(up_mask, bound_box, cell['cell_num'])
 
-        cell_mask = create_cell_mask(up_mask, bound_box, cell)
 
-
-        save_path = f"./vr_tool/objects/{cell}.obj"
-        given_path = f"./objects/{cell}.obj"
-        obj_info['path'] = given_path
-        obj_info['min_coords'] = {"x": bound_box[0], "y": bound_box[2], "z": bound_box[4]}
-        obj_info['max_coords'] = {"x": bound_box[1], "y": bound_box[3], "z": bound_box[5]}
-        complete = create_cell_object(cell_mask, save_path)
-        if(complete):
-            all_obj_paths.append(obj_info)
+            save_path = f"./vr_tool/objects/{cell['cell_num']}.obj"
+            given_path = f"./objects/{cell['cell_num']}.obj"
+            obj_info['path'] = given_path
+            obj_info['min_coords'] = {"x": bound_box[0], "y": bound_box[2], "z": bound_box[4]}
+            obj_info['max_coords'] = {"x": bound_box[1], "y": bound_box[3], "z": bound_box[5]}
+            complete = create_cell_object(cell_mask, save_path)
+            if(complete):
+                all_obj_paths.append(obj_info)
         
     return all_obj_paths
+
+def removeCell(mask, cellNum):
+    for num in np.nditer(mask, op_flags=['readwrite']):
+        if(num == cellNum):
+            num[...] = 0
+    return mask
+
 
 def full_segmentation(mask, cell_num, markers, next_cell_num):
     new_cells = separate_cells(mask, cell_num, markers, next_cell_num)
