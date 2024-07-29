@@ -43,32 +43,6 @@ export class Mask{
         }
 
         quickFetch({action: "remove", remObjects: this.removedAnns});
-
-        // fetch("http://127.0.0.1:8080/", {
-        //     method: "POST",
-        //     headers: {
-        //       "Content-Type": "application/json",
-        //     },
-        //     body: JSON.stringify({action: "remove", remObjects: this.removedAnns}),
-        //   })
-        //     .then(function (response) {
-        //       if (!response.ok) {
-        //         throw new Error(
-        //           "Network response was not ok " + response.statusText
-        //         );
-        //       }
-        //       return response.json();
-        //     })
-        //     .then(function (data) {
-        //         console.log("Server response:", data);
-        //     })
-        //     .catch(function (error) {
-        //       console.error(
-        //         "There has been a problem with your fetch operation:",
-        //         error
-        //       );
-        //     });
-
     }
     
 
@@ -76,24 +50,6 @@ export class Mask{
         this.scene.remove(ann.meshObj);
         this.hiddenAnns.push(ann);
     }
-
-
-
-    toggleMask(toggle){
-        if(toggle){
-            for(let a of this.anns){
-                this.scene.add(a.meshObj)
-            }
-        } else {
-            for(let a of this.anns){
-                this.scene.remove(ant.meshObj);
-            }
-        }
-
-    }
-
-
-
 
     updateMask(){
         quickFetch({action: "save"})
@@ -110,7 +66,8 @@ export class Mask{
             }
         }
     }
-    unhighlight(){
+
+    unHighlight(){
         while(this.hiddenAnns.length > 0){
             let ann = this.hiddenAnns.pop();
             this.scene.add(ann.meshObj);

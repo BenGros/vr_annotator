@@ -169,7 +169,7 @@ def make_new_objects(up_mask, updated_cell):
 
     for cell in updated_cell:
         if(not cell['remove']):
-            obj_info = {"path": None, "min_coords": None, "max_coords": None, "cell_num": cell['cell_num']}
+            obj_info = {"path": None, "min_coords": None, "max_coords": None, "cell_num": cell['cell_num'], "remove": False}
             bound_box = create_cell_bound_box(up_mask, cell['cell_num'])
             cell_mask = create_cell_mask(up_mask, bound_box, cell['cell_num'])
 
@@ -182,6 +182,9 @@ def make_new_objects(up_mask, updated_cell):
             complete = create_cell_object(cell_mask, save_path)
             if(complete):
                 all_obj_paths.append(obj_info)
+        else:
+            obj_info = {"cell_num": cell['cell_num'], "remove": True}
+            all_obj_paths.append(obj_info)
         
     return all_obj_paths
 

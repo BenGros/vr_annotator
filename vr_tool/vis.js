@@ -11,65 +11,36 @@ import { Mask, Ann, quickFetch} from "./mask.js"
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // General scene elements
-let scene, renderer, volumeData, camera, volconfig, gui;
-
-let refresh = false;
-
-// for tracking all image voxels
-let allMesh = [];
-// all mask voxels
-let ants = [];
-// Any removed premade mask voxels
-let removedAnts = [];
-// any mesh replaced by an annotation
-let removedMesh = [];
-
-let allMeshObj = {allMesh: [], hidden: [], removed: []};
-let allAnts = {all: [], hidden: [], removed: []};
-
-// Annotation Cell Tracking
-let cellNumbers = {currNum: 0, nextNum: 1, total: 0};
-let cellColours = {currCol: 0, nextCol: 1};
+let scene, renderer, camera, gui;
 
 // VR Controls
 let controller1, controller2, cgrip1, cgrip2, hand1, hand2;
 
+let volconfig;
+let dummyCam;
+
 // VR Annotation Guides
-let vrCube;
 let vrLine;
 let controlLine;
 
 // GUI setup
 let guiMesh;
-let group;
+let group, user;
 
 let raycaster;
 
-// HUD elements
-let scoreRenderer;
-let sprite;
-
 // For loading files
-let imageDataPath = '';
-let totalMask;
 let mask_data_path = '';
-let newMask;
 
 let markedCell = []
-let currentMark = {line1: [], line2: [], remove: false};
 
 let voxelSize = 0.1
-
-let segIP = false;
 
 let mask;
 let zoomed = false;
 
-// 'supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_im/1632_4096_2560.json'
-// supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_slice_common_cellseg3d/1632_4096_2560.json
-// supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch0_train_random_sample_cellseg3d/320_6144_2816.json
+let clock;
 
-// supervised_datasets_watershed_json/supervised_datasets_watershed_json/sz64_ch1_test_random_sample_cellseg3d/384_6272_2048.json
 init();
 
 // Initialization
@@ -86,8 +57,18 @@ function init(){
     document.body.appendChild( renderer.domElement );
 
     // Camera Setup
+    user = new THREE.Object3D();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    scene.add(camera);
+    
+    // user.lookAt(1.6,2,0);
+    user.add(camera);
+    scene.add(user);
+
+    dummyCam = new THREE.Object3D();
+    camera.add(dummyCam);
+
+    clock = new THREE.Clock();
+
 
     const ambientLight = new THREE.AmbientLight(0xffffff); // White light
     scene.add(ambientLight);
@@ -101,27 +82,38 @@ function init(){
 
     // setup VR controllers
     controller1 = renderer.xr.getController(0);
-    scene.add(controller1);
+    // scene.add(controller1);
+    // controller1.position.set(1.6,2,4)
+    user.add(controller1);
 
     controller2 = renderer.xr.getController(1);
-    scene.add(controller2);
+    // scene.add(controller2);
+    user.add(controller2);
+
+   
 
     // setup Controller grips
     const controllerModelFactory = new XRControllerModelFactory();
     const handModelFactory = new XRHandModelFactory();
     cgrip1 = renderer.xr.getControllerGrip(0);
     cgrip1.add(controllerModelFactory.createControllerModel( cgrip1 ));
-    scene.add(cgrip1);
+    // scene.add(cgrip1);
+    user.add(cgrip1)
     cgrip2 = renderer.xr.getControllerGrip(1);
     cgrip2.add(controllerModelFactory.createControllerModel( cgrip2 ));
-    scene.add(cgrip2);
+    // scene.add(cgrip2);
+    user.add(cgrip2);
 
     // setup VR hand visuals
     hand1 = renderer.xr.getHand(0);
-    scene.add(hand1);
+    // scene.add(hand1);
+    user.add(hand1);
 
     hand2 = renderer.xr.getHand(1);
-    scene.add(hand2);
+    // scene.add(hand2);
+    user.add(hand2);
+
+
 
     const lineGeom = new THREE.BufferGeometry();
     lineGeom.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
@@ -129,6 +121,8 @@ function init(){
     controller1.add(vrLine);
     controller1.add(controlLine);
     controller1.scale.set(0.1,0.1,0.1);
+
+    user.position.set(1.6,0.4,4);
 
     // access gamepad for movement
     controller1.addEventListener( 'connected', (e) => {
@@ -142,7 +136,8 @@ function init(){
     // Change to next cell for annotating
     controller2.addEventListener('selectstart', onLeftTriggerPress);
     // Open and close GUI
-    controller2.addEventListener('squeezestart', onLeftTriggerSqueeze);
+    controller2.addEventListener('squeezestart', onLeftTriggerSqueezeStart);
+    controller2.addEventListener('squeezeend', onLeftTriggerSqueezeStop);
 
     // Gui setting the user can control
     volconfig = {threshMin: 500, threshMax: 800, channel: 0,
@@ -153,22 +148,10 @@ function init(){
 
     // Build out GUI
     gui = new GUI({width: 300});
-    // gui.add(volconfig, 'threshMin', 0, 5000, 10).onFinishChange(load);
-    // gui.add(volconfig, 'threshMax', 0, 5000, 10).onFinishChange(load);
-    // gui.add(volconfig, 'chunkNum', 0,7, 1).onFinishChange(fullReload);
-    // gui.add(volconfig, 'cubeSize', 0, 10, 1).onFinishChange(()=>{
-    //     vrLine.scale.setScalar(volconfig.cubeSize)
-    // });
-    // gui.add(volconfig, 'removeAnnotations', 0, 1, 1);
-    // gui.add(volconfig, 'showMask',0,1,1).onFinishChange(()=>{toggleMask(volconfig.showMask)})
-    // gui.add({save: ()=>{
-    //     if(!newMask){
-    //         annotationsToNewMask()
-    //     } else {
-    //         annotationsToModifyMask();
-    //     }
-    // }}, 'save')
-    // gui.domElement.style.visibility = 'hidden';
+    gui.add({save: ()=>{
+        mask.updateMask();
+    }}, 'save')
+    gui.domElement.style.visibility = 'hidden';
 
     // make GUI interactive within VR
     group = new InteractiveGroup();
@@ -203,16 +186,13 @@ function init(){
     form.addEventListener('submit', (event)=>{
         event.preventDefault()
         const imInp = document.getElementById('imageDP')
-        imageDataPath = imInp.value;
         imInp.value = '';
         if(maskSelect.value == 'new'){
             mask_data_path = newMaskInp.value
             newMaskInp.value = ''
-            newMask = true;
         } else {
             mask_data_path = oldMaskInp.value;
             oldMaskInp.value = '';
-            newMask = false;
         }
 
         newLoad(mask_data_path)
@@ -310,15 +290,42 @@ function onLeftTriggerPress(event){
     
 }
 
-function onLeftTriggerSqueeze(event){
-    console.log(controller1.position)
-    // for opening and closing gui
-    if(guiMesh.scale.x > 0){
-        guiMesh.scale.setScalar(0)
-    } else {
-        guiMesh.scale.setScalar(4);
-        guiMesh.position.copy(controller2.position);
+function onLeftTriggerSqueezeStart(event){
+    // console.log(controller1.position)
+    // // for opening and closing gui
+    // if(guiMesh.scale.x > 0){
+    //     guiMesh.scale.setScalar(0)
+    // } else {
+    //     guiMesh.scale.setScalar(4);
+    //     guiMesh.position.copy(controller2.position);
+    // }
+
+    // const speed = 2;
+    // const quaternion = user.quaternion.clone();
+    // user.quaternion.copy(dummyCam.getWorldQuaternion())
+    // user.translateZ(-dt*speed);
+    // user.quaternion.copy(quaternion);
+
+    controller2.userData.squeezePressed = true;
+}
+
+function onLeftTriggerSqueezeStop(event){
+    controller2.userData.squeezePressed = false;
+    console.log(user.position)
+}
+
+function handleController(controller, dt){
+    if (controller.userData.squeezePressed ){
+        console.log("Here")
+        const speed = 0.2;
+        const quaternion = user.quaternion.clone();
+        const quat = new THREE.Quaternion();
+        dummyCam.getWorldQuaternion(quat);
+        user.quaternion.copy(quat);
+        user.translateZ(-dt*speed);
+        user.quaternion.copy(quaternion);
     }
+
 }
 
 function getAntColour(colour){
@@ -407,7 +414,11 @@ function render() {
 }
 
 function animate(){
-    renderer.render(scene, camera)
+    renderer.render(scene, camera);
+    const dt = clock.getDelta();
+    if (controller2 ) {
+        handleController( controller2, dt )};
+    renderer.render( scene, camera );
 }
 
 
@@ -441,6 +452,7 @@ function markCellCentre(remove){
 
     let pos = new THREE.Vector3();
     pos.copy(controller1.position);
+    pos.add(user.position);
     pos.multiplyScalar(10);
     pos.remove = remove;
     markedCell.push(pos);
@@ -462,28 +474,28 @@ function updateAnns(data){
     let loader = new OBJLoader();
     for(let object of objs){
         mask.removeAnn(object.cell_num)
-        loader.load(object.path, (obj)=>{
-            obj.traverse(function (child) {
-                if (child.isMesh) {
-                    child.material.color.set(getAntColour((object.cell_num)%15).code);
-                    child.material.side = THREE.DoubleSide
-                    // to keep true to scale (Need to find out why its like this)
-                    child.position.set(0,0,0)
-                    child.scale.set(0.1,0.1,0.1)
-                    
-                    // child.rotation.y = Math.PI/2
-                    child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
-                    
-                    let ann = new Ann(child, object.cell_num);
-                    mask.addAnn(ann)
-                }
-            });
+        if(!object.remove){
+            loader.load(object.path, (obj)=>{
+                obj.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.material.color.set(getAntColour((object.cell_num)%15).code);
+                        child.material.side = THREE.DoubleSide
+                        child.position.set(0,0,0)
+                        child.scale.set(0.1,0.1,0.1)
+                        
+                        child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                        
+                        let ann = new Ann(child, object.cell_num);
+                        mask.addAnn(ann)
+                    }
+                });
 
-        })
+            })
+        }
     }
     zoomed = false;
     mask.removeSegHelpers();
-    mask.unhighlight();
+    mask.unHighlight();
         
 
 }
