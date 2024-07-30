@@ -28,26 +28,19 @@
   </head>
   <body>
     <div id="paths">
+      <h1>Enter the path to the mask file relative to the vr_tool directory</h1>
       <form>
-        <input id="imageDP" type="text" placeholder="Image Data Path" />
-        <select id="maskType">
-          <option value="new">New Mask</option>
-          <option value="exist">Update Mask</option>
-        </select>
         <input
           id="maskDP"
           type="text"
           placeholder="Mask Data Path"
-          style="display: none"
+          style="display: inline"
         />
-        <input id="newMaskDP" type="text" placeholder="File path for save" />
         <input id="subBtn" type="submit" />
         <h1 id="loaded"></h1>
-        <p>Leave mask field blank if new mask is to be created</p>
       </form>
     </div>
     <div id="inset"></div>
-    <div id="info"></div>
     <script src="vis.js" type="module"></script>
   </body>
 </html>

@@ -10,6 +10,8 @@ export class Mask{
         this.scene = scene;
         this.currentCell = 0;
         this.segHelpers = [];
+        this.toRemove = [];
+        this.newCells = [];
 
     }
 
@@ -43,6 +45,7 @@ export class Mask{
         }
 
         quickFetch({action: "remove", remObjects: this.removedAnns});
+        this.removedAnns = [];
     }
     
 
@@ -99,6 +102,38 @@ export class Mask{
             this.scene.remove(help)
         }
     }
+
+    toBeRemoved(cellNum){
+        for(let ann of this.anns){
+            if(ann.cellNum == cellNum){
+                this.toRemove.push(ann);
+                this.scene.remove(ann.meshObj);
+            }
+        }
+        this.anns = this.anns.filter((a)=>{
+            if(this.toRemove.includes(a)){
+                return false;
+            } 
+            return true;
+        })
+    }
+
+    removeNew(){
+        let oldCellNums = [];
+        while(this.newCells.length > 0){
+            let ann = this.newCells.pop();
+            oldCellNums.push(ann.cellNum);
+            this.removeAnn(ann.cellNum);
+        }
+        oldCellNums.sort();
+        quickFetch({action: "undo", cellNums: oldCellNums})
+        while(this.toRemove.length > 0){
+            let ann = this.toRemove.pop()
+            ann.meshObj.material.opacity = 1;
+            this.addAnn(ann)
+        }
+
+    }
 }
 
 
@@ -126,7 +161,7 @@ export function quickFetch(body, callFunc){
           return response.json();
         })
         .then(function (data) {
-            if(callFunc != null | callFunc != undefined){
+            if(callFunc != null || callFunc != undefined){
                 callFunc(data);
             }
             console.log("Server response:", data);

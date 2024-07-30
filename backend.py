@@ -18,8 +18,12 @@ class RequestHandler(SimpleHTTPRequestHandler):
             parsed_data = json.loads(data.decode('utf-8'))
             if(parsed_data['action'] == "save"):
                 # write out mask
+                with open(link,'r') as f:
+                    whole_mask = np.array(json.load(f))
+                    whole_mask[:32][:32][:32] = mask
+
                 with open("file.json", 'w') as f:
-                    f.write(json.dumps(mask))
+                    f.write(json.dumps(whole_mask))
 
                 response_message = {'message': 'Data received successfully.'}
                 self.send_response(200)
@@ -50,15 +54,15 @@ class RequestHandler(SimpleHTTPRequestHandler):
             elif (parsed_data['action'] == "remove"):
                 for ann in parsed_data['remObjects']:
                     mask = removeCell(mask, ann['cellNum'])
-                for num in np.nditer(mask):
-                    if(num == ann['cellNum']):
-                        print("NOPE")
                 response_message = {'message': 'Data received successfully.'}
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
-
+            elif (parsed_data['action'] == "undo"):
+                for num in np.nditer(mask, op_flags=['readwrite']):
+                    if(num in parsed_data['cellNums']):
+                        num[...] = parsed_data['cellNums'][0]
 
         except json.JSONDecodeError:
             self.send_response(400)

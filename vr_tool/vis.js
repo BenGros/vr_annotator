@@ -8,7 +8,6 @@ import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { Mask, Ann, quickFetch} from "./mask.js"
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // General scene elements
 let scene, renderer, camera, gui;
@@ -32,16 +31,28 @@ let raycaster;
 // For loading files
 let mask_data_path = '';
 
-let markedCell = []
-
-let voxelSize = 0.1
+let markedCell = [];
 
 let mask;
 let zoomed = false;
+let verify = false;
 
 let clock;
 
-init();
+// html pieces for receiving path input
+const oldMaskInp = document.getElementById('maskDP');
+const form = document.getElementById('paths');
+form.addEventListener('submit', (event)=>{
+    event.preventDefault()
+    mask_data_path = oldMaskInp.value
+
+    // initialize scene
+    init();
+    
+    // Allow user to enter vr
+    document.getElementById('loaded').innerHTML = "Image Loaded"
+    document.body.appendChild( VRButton.createButton( renderer ) );
+})
 
 // Initialization
 // TODO: Break into smaller parts
@@ -59,35 +70,32 @@ function init(){
     // Camera Setup
     user = new THREE.Object3D();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    
-    // user.lookAt(1.6,2,0);
     user.add(camera);
     scene.add(user);
-
     dummyCam = new THREE.Object3D();
     camera.add(dummyCam);
 
     clock = new THREE.Clock();
 
 
+    // Add lighting to define shapes
     const ambientLight = new THREE.AmbientLight(0xffffff); // White light
     scene.add(ambientLight);
 
-    // Add a directional light
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(1, 1, 1).normalize();
     scene.add(directionalLight);
 
+    const oppositeLight = new THREE.DirectionalLight(0xffffff, 1);
+    oppositeLight.position.set(-1, -1, -1).normalize();
+    scene.add(oppositeLight);
     mask = new Mask(scene);
 
-    // setup VR controllers
+    // setup VR controllers and add to user object for movement
     controller1 = renderer.xr.getController(0);
-    // scene.add(controller1);
-    // controller1.position.set(1.6,2,4)
     user.add(controller1);
 
     controller2 = renderer.xr.getController(1);
-    // scene.add(controller2);
     user.add(controller2);
 
    
@@ -97,24 +105,20 @@ function init(){
     const handModelFactory = new XRHandModelFactory();
     cgrip1 = renderer.xr.getControllerGrip(0);
     cgrip1.add(controllerModelFactory.createControllerModel( cgrip1 ));
-    // scene.add(cgrip1);
-    user.add(cgrip1)
+    user.add(cgrip1);
+
     cgrip2 = renderer.xr.getControllerGrip(1);
     cgrip2.add(controllerModelFactory.createControllerModel( cgrip2 ));
-    // scene.add(cgrip2);
     user.add(cgrip2);
 
     // setup VR hand visuals
     hand1 = renderer.xr.getHand(0);
-    // scene.add(hand1);
     user.add(hand1);
 
     hand2 = renderer.xr.getHand(1);
-    // scene.add(hand2);
     user.add(hand2);
 
-
-
+    // Add guide line to right handed controller
     const lineGeom = new THREE.BufferGeometry();
     lineGeom.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
     controlLine = new THREE.Line(lineGeom)
@@ -122,21 +126,18 @@ function init(){
     controller1.add(controlLine);
     controller1.scale.set(0.1,0.1,0.1);
 
+    // set starting position in scene
     user.position.set(1.6,0.4,4);
 
-    // access gamepad for movement
-    controller1.addEventListener( 'connected', (e) => {
-        controller1.gamepad = e.data.gamepad
-    });
-
-    // add selection with line on controller for right trigger
+    // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
     controller1.addEventListener('selectstart', onRightTriggerPress);
-    // make the annptating button attached to squeeze right
+    // Will either mark the centre of a cell for removal or mark an entire cell for removal
     controller1.addEventListener('squeezestart', onRightSqueeze);
-    // Change to next cell for annotating
+    // Will send request back to backend for removals and segmentations
     controller2.addEventListener('selectstart', onLeftTriggerPress);
-    // Open and close GUI
+    // Start movement
     controller2.addEventListener('squeezestart', onLeftTriggerSqueezeStart);
+    // End movement
     controller2.addEventListener('squeezeend', onLeftTriggerSqueezeStop);
 
     // Gui setting the user can control
@@ -163,44 +164,8 @@ function init(){
     guiMesh.scale.setScalar( 0 );
     group.add( guiMesh );
 
-
-    const maskSelect = document.getElementById('maskType');
-    const newMaskInp = document.getElementById('newMaskDP');
-    const oldMaskInp = document.getElementById('maskDP');
-    const subBtn = document.getElementById('subBtn');
-
-    maskSelect.addEventListener('change', ()=>{
-        if(maskSelect.value == 'new'){
-            oldMaskInp.style.display = "none";
-            newMaskInp.value = ''
-            newMaskInp.style.display = 'inline';
-            
-        } else {
-            oldMaskInp.value = ''
-            oldMaskInp.style.display = "inline";
-            newMaskInp.style.display = 'none';
-        }
-    })
-    // create form for user to use their own images and masks
-    const form = document.getElementById('paths');
-    form.addEventListener('submit', (event)=>{
-        event.preventDefault()
-        const imInp = document.getElementById('imageDP')
-        imInp.value = '';
-        if(maskSelect.value == 'new'){
-            mask_data_path = newMaskInp.value
-            newMaskInp.value = ''
-        } else {
-            mask_data_path = oldMaskInp.value;
-            oldMaskInp.value = '';
-        }
-
-        newLoad(mask_data_path)
-        document.getElementById('loaded').innerHTML = "Image Loaded"
-        document.body.appendChild( VRButton.createButton( renderer ) );
-        
-        
-    })
+    // Load in cells
+    cellLoader(mask_data_path);
 
     // set render loop
     renderer.setAnimationLoop(animate);
@@ -234,26 +199,66 @@ function checkIntersection(meshList){
 
 
 function onRightTriggerPress(event) {
+    /* Check if zoomed in on one cell
+    If not use raycaster to detect the interacted cell and zoom in 
+    on it.
+
+    If it is zoomed mark the centre of the cell with a cube signalling it 
+    is to be segmented and kept
+    */
 
     if(!zoomed){
+        if(mask.removedAnns.length <1){
 
-        let meshList = []
-        for(let ann of mask.anns){
-            meshList.push(ann.meshObj)
-        }
-
-        let castedObjects = checkIntersection(meshList);
-
-        if(castedObjects != null){
-            let ann = mask.meshToAnn(castedObjects.mItem);
-            if(ann != undefined){
-                mask.highlightOne(ann.cellNum)
-                ann.meshObj.material.opacity = 0.5
-                ann.meshObj.material.transparent = true;
-                zoomed = true;
-                mask.currentCell = ann.cellNum
-                    
+            let meshList = []
+            for(let ann of mask.anns){
+                meshList.push(ann.meshObj)
             }
+
+            let castedObjects = checkIntersection(meshList);
+
+            if(castedObjects != null){
+                let ann = mask.meshToAnn(castedObjects.mItem);
+                if(ann != undefined && ann.meshObj.material.color != 0x000000){
+                    console.log("NO")
+                    mask.highlightOne(ann.cellNum)
+                    ann.meshObj.material.opacity = 0.5
+                    ann.meshObj.material.transparent = true;
+                    zoomed = true;
+                    mask.currentCell = ann.cellNum
+                } else if (ann != undefined){
+                    console.log("Made ir")
+                    ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+                    mask.removedAnns = mask.removedAnns.filter((a)=>{
+                        if(a == ann){
+                            return false;
+                        }
+                        return true;
+                    })
+                }
+            }
+        } else {
+            let meshList = []
+            for(let ann of mask.removedAnns){
+                meshList.push(ann.meshObj)
+            }
+
+            let castedObjects = checkIntersection(meshList);
+            if(castedObjects != null){
+                let ann = mask.meshToAnn(castedObjects.mItem);
+                if (ann != undefined){
+                    console.log("Made ir")
+                    ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+                    mask.removedAnns = mask.removedAnns.filter((a)=>{
+                        if(a == ann){
+                            return false;
+                        }
+                        return true;
+                    })
+                }
+
+            }
+
         }
     } else {
         markCellCentre(false);
@@ -261,6 +266,12 @@ function onRightTriggerPress(event) {
 }
 
 function onRightSqueeze(event){
+    /*
+    Similar to trigger press except if not zoomed
+    mark the entire cell for removal by turning it black
+    If it is zoomed mark the cell centre for segmenting and removal
+    (Used to remove parts of a cell that don't belong)
+    */
     if(!zoomed){
         let meshList = []
         for(let ann of mask.anns){
@@ -273,24 +284,48 @@ function onRightSqueeze(event){
             mask.markForRemove(ann);
         }
     } else {
-        markCellCentre(true);
+        if(verify){
+            mask.unHighlight();
+            markedCell = [];
+            zoomed = false;
+            verify = false;
+            mask.removeNew();
+
+        } else {
+            markCellCentre(true);
+        }
     }
 
 }
 
 function onLeftTriggerPress(event){
-    // for annotating a new cell
+    /*
+    If a centre is marked use the segmenting function
+    If not remove all the cells marked for removal
+    */
 
-    if(markedCell.length > 0){
-        separateCells(markedCell, mask);
-        markedCell = [];
-    } else {
+    if(markedCell.length > 1){
+        if(!verify){
+            separateCells(markedCell, mask);
+        } else {
+            mask.unHighlight();
+            markedCell = [];
+            zoomed = false;
+            verify = false;
+            mask.toRemove = [];
+            mask.newCells = [];
+        }
+    } else if(mask.removedAnns.length > 0){
         mask.removeAllAnns();
     }
     
 }
 
 function onLeftTriggerSqueezeStart(event){
+    /*
+    Used to start motion 
+    variable can be used in animate to start and stop motion
+    */
     // console.log(controller1.position)
     // // for opening and closing gui
     // if(guiMesh.scale.x > 0){
@@ -300,24 +335,21 @@ function onLeftTriggerSqueezeStart(event){
     //     guiMesh.position.copy(controller2.position);
     // }
 
-    // const speed = 2;
-    // const quaternion = user.quaternion.clone();
-    // user.quaternion.copy(dummyCam.getWorldQuaternion())
-    // user.translateZ(-dt*speed);
-    // user.quaternion.copy(quaternion);
-
     controller2.userData.squeezePressed = true;
 }
 
 function onLeftTriggerSqueezeStop(event){
+    // stops motion
     controller2.userData.squeezePressed = false;
-    console.log(user.position)
 }
 
 function handleController(controller, dt){
+    /*  
+    Well motion is wanted calculate the camera direction and move entire user object
+    in that direction at a preset speed
+    */
     if (controller.userData.squeezePressed ){
-        console.log("Here")
-        const speed = 0.2;
+        const speed = 0.5;
         const quaternion = user.quaternion.clone();
         const quat = new THREE.Quaternion();
         dummyCam.getWorldQuaternion(quat);
@@ -365,7 +397,12 @@ function getAntColour(colour){
 }
 
 
-function newLoad(link){
+function cellLoader(link){
+    /*
+    Used to load in all cell objects based on the path provided by the
+    backend which generates the objects
+    Then applies the colouring to the cell and shrinks it by 10 to make them easier to maneuver around
+    */
     function loading(data) {
         let loader = new OBJLoader();
         for(let object of data.objPaths){
@@ -414,6 +451,9 @@ function render() {
 }
 
 function animate(){
+    /*
+    Calls the renderer and also keeps track if camera should be moving
+    */
     renderer.render(scene, camera);
     const dt = clock.getDelta();
     if (controller2 ) {
@@ -446,9 +486,14 @@ function chunkToCoords(chunkNum){
     }
 }
 
-
-
 function markCellCentre(remove){
+    /*
+    Adds controller position with user offset (due to movement) applied
+    to keep position consistent to original array
+
+    Creates a cube at the position and colours it white or black 
+    based on whether the cell is being kept or not
+    */
 
     let pos = new THREE.Vector3();
     pos.copy(controller1.position);
@@ -458,6 +503,7 @@ function markCellCentre(remove){
     markedCell.push(pos);
 
     let cube = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.1), new THREE.MeshBasicMaterial({color:0xffffff}));
+    remove && cube.material.color.set(0x000000); 
     cube.position.set(pos.x*0.1,pos.y*0.1,pos.z*0.1);
     scene.add(cube);
     mask.segHelpers.push(cube)
@@ -465,15 +511,22 @@ function markCellCentre(remove){
 }
 
 
-function separateCells(markedCell, mask, boundBox, cellNum){
+function separateCells(markedCell, mask){
+    // Make call to backend to update the array and make new objects
     quickFetch({action: "split", markers: markedCell, curr_cell: mask.currentCell, next_cell: mask.getNextCellNum()}, updateAnns);
 }
 
 function updateAnns(data){
+    /*
+    Takes the new objects from the backend and removes the old object
+    and adds the new ones
+    Adds the other cells back to allow more annotating
+    */
     let objs = data.objects
     let loader = new OBJLoader();
     for(let object of objs){
-        mask.removeAnn(object.cell_num)
+        // mask.removeAnn(object.cell_num)
+        mask.toBeRemoved(object.cell_num);
         if(!object.remove){
             loader.load(object.path, (obj)=>{
                 obj.traverse(function (child) {
@@ -487,15 +540,14 @@ function updateAnns(data){
                         
                         let ann = new Ann(child, object.cell_num);
                         mask.addAnn(ann)
+                        mask.newCells.push(ann);
                     }
                 });
 
             })
         }
     }
-    zoomed = false;
     mask.removeSegHelpers();
-    mask.unHighlight();
-        
+    verify = true;
 
 }
