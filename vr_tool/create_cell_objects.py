@@ -17,6 +17,7 @@ def get_all_instances(mask):
 
 
 def create_cell_bound_box(mask, cell_num):
+    # Create a bounding box within the array for a specfic cell
     max_x = max_y = max_z = -np.inf
     min_x = min_y = min_z = np.inf
     for z_count, z in enumerate(mask):
@@ -43,7 +44,7 @@ def create_cell_bound_box(mask, cell_num):
 
 
 def create_cell_mask(mask, bound_box, cell_num):
-    print(bound_box)
+    # create a mask for the cell within the bounding box area
     cell_mask = np.zeros((int(bound_box[5]-bound_box[4] + 1), int(bound_box[3]-bound_box[2] + 1), int(bound_box[1]-bound_box[0] + 1)), np.int_)
     
     z = bound_box[4]
@@ -67,12 +68,14 @@ def create_cell_mask(mask, bound_box, cell_num):
     return cell_mask
 
 def create_cell_object(cell_mask, save_path):
+    # Use Pyvista to create the isosurface for the cell
+    # Save the object
     if(cell_mask.shape[0]>1 and cell_mask.shape[1]>1 and cell_mask.shape[2] >1):
         correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
         verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=0.5)
         # Prepare the faces array for PyVista
         faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
-        # # Create a PyVista mesh from the marching cubes output
+        # Create a PyVista mesh from the marching cubes output
         mesh = pv.PolyData(verts, faces_pv)
         mesh.fill_holes(1000, True)
         mesh.smooth(inplace=True)
@@ -83,6 +86,7 @@ def create_cell_object(cell_mask, save_path):
     return False
 
 def all(mask):
+    # Combine functions to make cell objects for every cell from the mask
     all_obj_paths = []
     all_cell_nums = get_all_instances(mask)
 
@@ -103,15 +107,12 @@ def all(mask):
 
     return all_obj_paths
 
-def calculate_midpoint(pos1, pos2):
-    return ((pos2-pos1)/2)+pos1
-
 
 def separate_cells(mask, cell_num, markers, next_cell_num):
+    # function used to make a cell mask containing the segmented cells
     all_cell_nums = []
     all_cell_nums.append({"cell_num": cell_num, "remove": markers[0]['remove']})
     bound_box = create_cell_bound_box(mask, cell_num)
-    print(bound_box)
     cell_mask = create_cell_mask(mask, bound_box, cell_num)
     marker_mask = np.zeros((cell_mask.shape), np.int_)
     count = 0
@@ -144,8 +145,9 @@ def separate_cells(mask, cell_num, markers, next_cell_num):
     np.save("arr.npy", labels)
     return labels, all_cell_nums
 
-def update_mask(mask, labels, original_cell_num):
-    bound_box = create_cell_bound_box(mask, original_cell_num)
+def update_mask(upmask, labels, original_cell_num, all_cells):
+    # Update the holder mask with the segmentation changes
+    bound_box = create_cell_bound_box(upmask, original_cell_num)
     new_z = 0
     z = bound_box[4]
     while(z <= bound_box[5]):
@@ -155,16 +157,23 @@ def update_mask(mask, labels, original_cell_num):
             x = bound_box[0]
             new_x = 0
             while(x<= bound_box[1]):
-                mask[z][y][x] = labels[new_z][new_y][new_x]
+                cNum = labels[new_z][new_y][new_x]
+                rem = find_cell_status(all_cells, cNum)
+                # Option to segment and remove a part in one step so then set to 0
+                if(rem):
+                    upmask[z][y][x] = 0
+                else:
+                    upmask[z][y][x] = cNum
                 x+=1
                 new_x +=1
             y+=1
             new_y +=1
         z+=1
         new_z+=1
-    return mask
+    return upmask
 
 def make_new_objects(up_mask, updated_cell):
+    # Create new objects for the segmented cells
     all_obj_paths = []
 
     for cell in updated_cell:
@@ -189,16 +198,23 @@ def make_new_objects(up_mask, updated_cell):
     return all_obj_paths
 
 def removeCell(mask, cellNum):
+    # Remove a cell from the mask
     for num in np.nditer(mask, op_flags=['readwrite']):
         if(num == cellNum):
             num[...] = 0
     return mask
 
+def find_cell_status(all_cells, cell_num):
+    # Find out if the segmented cell is to be removed or not
+    for cell in all_cells:
+        if(cell_num == cell['cell_num']):
+            return cell['remove']
 
-def full_segmentation(mask, cell_num, markers, next_cell_num):
-    new_cells = separate_cells(mask, cell_num, markers, next_cell_num)
-    new_mask = mask
-    updated_mask = update_mask(new_mask, new_cells[0],  cell_num)
-    objects = make_new_objects(updated_mask, new_cells[1])
+
+def full_segmentation(umask, cell_num, markers, next_cell_num):
+    # Combine all function for segmenting
+    new_cells = separate_cells(umask, cell_num, markers, next_cell_num)
+    umask = update_mask(umask, new_cells[0],  cell_num, new_cells[1])
+    objects = make_new_objects(umask, new_cells[1])
     return objects
 

@@ -17,6 +17,7 @@ let controller1, controller2, cgrip1, cgrip2, hand1, hand2;
 
 let volconfig;
 let dummyCam;
+let dummyController;
 
 // VR Annotation Guides
 let vrLine;
@@ -96,7 +97,11 @@ function init(){
     user.add(controller1);
 
     controller2 = renderer.xr.getController(1);
+    
     user.add(controller2);
+
+    dummyController = new THREE.Object3D();
+    controller2.add(dummyController);
 
    
 
@@ -220,14 +225,13 @@ function onRightTriggerPress(event) {
             if(castedObjects != null){
                 let ann = mask.meshToAnn(castedObjects.mItem);
                 if(ann != undefined && ann.meshObj.material.color != 0x000000){
-                    console.log("NO")
                     mask.highlightOne(ann.cellNum)
+                    mask.currentSegmentCell = ann;
                     ann.meshObj.material.opacity = 0.5
                     ann.meshObj.material.transparent = true;
                     zoomed = true;
                     mask.currentCell = ann.cellNum
                 } else if (ann != undefined){
-                    console.log("Made ir")
                     ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
                     mask.removedAnns = mask.removedAnns.filter((a)=>{
                         if(a == ann){
@@ -314,9 +318,13 @@ function onLeftTriggerPress(event){
             verify = false;
             mask.toRemove = [];
             mask.newCells = [];
+            quickFetch({action: "complete_segment"});
         }
     } else if(mask.removedAnns.length > 0){
         mask.removeAllAnns();
+    } else {
+
+
     }
     
 }
@@ -352,7 +360,8 @@ function handleController(controller, dt){
         const speed = 0.5;
         const quaternion = user.quaternion.clone();
         const quat = new THREE.Quaternion();
-        dummyCam.getWorldQuaternion(quat);
+        // dummyCam.getWorldQuaternion(quat);
+        dummyController.getWorldQuaternion(quat);
         user.quaternion.copy(quat);
         user.translateZ(-dt*speed);
         user.quaternion.copy(quaternion);
@@ -523,31 +532,40 @@ function updateAnns(data){
     Adds the other cells back to allow more annotating
     */
     let objs = data.objects
-    let loader = new OBJLoader();
-    for(let object of objs){
-        // mask.removeAnn(object.cell_num)
-        mask.toBeRemoved(object.cell_num);
-        if(!object.remove){
-            loader.load(object.path, (obj)=>{
-                obj.traverse(function (child) {
-                    if (child.isMesh) {
-                        child.material.color.set(getAntColour((object.cell_num)%15).code);
-                        child.material.side = THREE.DoubleSide
-                        child.position.set(0,0,0)
-                        child.scale.set(0.1,0.1,0.1)
-                        
-                        child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
-                        
-                        let ann = new Ann(child, object.cell_num);
-                        mask.addAnn(ann)
-                        mask.newCells.push(ann);
-                    }
-                });
+    if(objs == null){
+        mask.removeSegHelpers();
+        mask.unHighlight();
+        zoomed = false;
+        markedCell = [];
+        mask.currentSegmentCell.meshObj.material.opacity = 1;
 
-            })
+    } else{
+        let loader = new OBJLoader();
+        for(let object of objs){
+            // mask.removeAnn(object.cell_num)
+            mask.toBeRemoved(object.cell_num);
+            if(!object.remove){
+                loader.load(object.path, (obj)=>{
+                    obj.traverse(function (child) {
+                        if (child.isMesh) {
+                            child.material.color.set(getAntColour((object.cell_num)%15).code);
+                            child.material.side = THREE.DoubleSide
+                            child.position.set(0,0,0)
+                            child.scale.set(0.1,0.1,0.1)
+                            
+                            child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                            
+                            let ann = new Ann(child, object.cell_num);
+                            mask.addAnn(ann)
+                            mask.newCells.push(ann);
+                        }
+                    });
+
+                })
+            }
         }
+        mask.removeSegHelpers();
+        verify = true;
     }
-    mask.removeSegHelpers();
-    verify = true;
 
 }

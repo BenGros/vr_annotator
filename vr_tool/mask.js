@@ -12,6 +12,7 @@ export class Mask{
         this.segHelpers = [];
         this.toRemove = [];
         this.newCells = [];
+        this.currentSegmentCell = null;
 
     }
 

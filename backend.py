@@ -1,16 +1,20 @@
-from http.server import SimpleHTTPRequestHandler, HTTPServer, BaseHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 import json
 import numpy as np
-import matplotlib.pyplot as plt
 
 from vr_tool.create_cell_objects import all, full_segmentation, removeCell
 
+# Hold the mask to be saved
 mask = None
+# Any unapproved updates to mask are here 
+updated_mask = None
 
 class RequestHandler(SimpleHTTPRequestHandler):
     
     def do_POST(self):
+        # make masks global to be able to access constantly
         global mask
+        global updated_mask
         content_length = int(self.headers['Content-Length'])
         data = self.rfile.read(content_length)
         try:
@@ -20,31 +24,42 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 # write out mask
                 with open(link,'r') as f:
                     whole_mask = np.array(json.load(f))
-                    whole_mask[:32][:32][:32] = mask
+                    whole_mask[:,:,:] = mask
 
                 with open("file.json", 'w') as f:
                     f.write(json.dumps(whole_mask))
 
-                response_message = {'message': 'Data received successfully.'}
+                response_message = {'message': 'Saved Successfully.'}
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
+            
+            # Used to segment cell into multiple parts
             elif (parsed_data['action'] == "split"):
-                markers = parsed_data['markers']
-                curr_cell_num = parsed_data['curr_cell']
-                next_cell_num = parsed_data['next_cell']
-                objects = full_segmentation(mask, curr_cell_num, markers, next_cell_num)
-
-                response_message = {'message': 'Data received successfully.', 'objects': objects}
+                # Surrond in try catch to prevent annotation screen to freeze
+                try:
+                    markers = parsed_data['markers']
+                    curr_cell_num = parsed_data['curr_cell']
+                    next_cell_num = parsed_data['next_cell']
+                    # Return new segmented cells
+                    objects = full_segmentation(updated_mask, curr_cell_num, markers, next_cell_num)
+                    response_message = {'message': 'Data received successfully.', 'objects': objects}
+                except:
+                    response_message= {'message': 'Error', 'objects': None}
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "load"):
                 link = parsed_data['mask_link']
+
                 with open(link,'r') as f:
-                    mask = np.array(json.load(f))[:32,:32,:32]
+                    # load the mask from provided link
+                    mask = np.array(json.load(f))[:,:,:]
+                    # update the holding mask
+                    updated_mask = np.copy(mask)
+                    # make the objects and pass the paths to the front end
                     all_obj_paths = all(mask)
                     response_message = {'message': 'Data received successfully.', 'totalMask': mask.tolist(), 'objPaths': all_obj_paths}
                     self.send_response(200)
@@ -52,6 +67,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "remove"):
+                # remove the given cells from the mask
                 for ann in parsed_data['remObjects']:
                     mask = removeCell(mask, ann['cellNum'])
                 response_message = {'message': 'Data received successfully.'}
@@ -60,9 +76,21 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "undo"):
-                for num in np.nditer(mask, op_flags=['readwrite']):
-                    if(num in parsed_data['cellNums']):
-                        num[...] = parsed_data['cellNums'][0]
+                # reset the updated mask to last confirmed change
+                updated_mask = np.copy(mask)
+                self.send_response(200)
+                response_message = {'message': 'Data received successfully.'}
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
+            elif (parsed_data['action'] == "complete_segment"):
+                # update the good copy of the mask
+                mask = np.copy(updated_mask)
+                self.send_response(200)
+                response_message = {'message': 'Data received successfully.'}
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
 
         except json.JSONDecodeError:
             self.send_response(400)
