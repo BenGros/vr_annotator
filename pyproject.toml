@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "vr-annotator"
+version = "0.1.0"
+description = ""
+authors = ["BenGros <bgros@uwo.ca>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^2.0.1"
+scikit-image = "^0.24.0"
+pyvista = "^0.44.1"
+scipy = "^1.14.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
