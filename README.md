@@ -40,7 +40,7 @@ Once in the VR environment the controllers are used to navigate the annotating p
 
 ### Moving around
 
-The movement is down by squeezing the left controller grip. While squeezing you will move in
+The movement is done by squeezing the left controller grip. While squeezing you will move in
 the direction of the left controller. So aim where you want to move and then squeeze the controller.
 The movement will stop when the squeezing stops.
 
