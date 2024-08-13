@@ -7,10 +7,12 @@ import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
 import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { Mask, Ann, quickFetch} from "./mask.js"
+import { Mask, Ann, quickFetch, Planes} from "./mask.js"
 
 // General scene elements
 let scene, renderer, camera, gui;
+
+let oldpos;
 
 // VR Controls
 let controller1, controller2, cgrip1, cgrip2, hand1, hand2;
@@ -25,12 +27,13 @@ let controlLine;
 
 // GUI setup
 let guiMesh;
-let group, user;
+let group, user, planes;
 
 let raycaster;
 
 // For loading files
 let mask_data_path = '';
+let image_data_path = '';
 
 let markedCell = [];
 
@@ -43,12 +46,15 @@ let clock;
 // html pieces for receiving path input
 const oldMaskInp = document.getElementById('maskDP');
 const form = document.getElementById('paths');
-form.addEventListener('submit', (event)=>{
+const newImageInp = document.getElementById('imagePath')
+form.addEventListener('submit', async (event)=>{
     event.preventDefault()
     mask_data_path = oldMaskInp.value
+    image_data_path = newImageInp.value;
 
     // initialize scene
-    init();
+    await init();
+
     
     // Allow user to enter vr
     document.getElementById('loaded').innerHTML = "Image Loaded"
@@ -57,9 +63,9 @@ form.addEventListener('submit', (event)=>{
 
 // Initialization
 // TODO: Break into smaller parts
-function init(){
-
-    // Basic Scene Setup
+async function init(){
+    return new Promise((resolve, reject)=>{
+        // Basic Scene Setup
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0000ff);
     renderer = new THREE.WebGLRenderer();
@@ -103,8 +109,6 @@ function init(){
     dummyController = new THREE.Object3D();
     controller2.add(dummyController);
 
-   
-
     // setup Controller grips
     const controllerModelFactory = new XRControllerModelFactory();
     const handModelFactory = new XRHandModelFactory();
@@ -122,6 +126,8 @@ function init(){
 
     hand2 = renderer.xr.getHand(1);
     user.add(hand2);
+
+    
 
     // Add guide line to right handed controller
     const lineGeom = new THREE.BufferGeometry();
@@ -170,13 +176,23 @@ function init(){
     group.add( guiMesh );
 
     // Load in cells
-    cellLoader(mask_data_path);
+    cellLoader(mask_data_path, image_data_path).then(()=>{
+        resolve();
+    });
 
     // set render loop
     renderer.setAnimationLoop(animate);
 
     // for window resizing
     window.addEventListener( 'resize', onWindowResize );
+    oldpos = new THREE.Vector3();
+    oldpos.copy(controller1.position);
+    oldpos.add(user.position);
+    oldpos.multiplyScalar(10);
+
+    })
+    
+    
 }
 
 function checkIntersection(meshList){
@@ -251,7 +267,6 @@ function onRightTriggerPress(event) {
             if(castedObjects != null){
                 let ann = mask.meshToAnn(castedObjects.mItem);
                 if (ann != undefined){
-                    console.log("Made ir")
                     ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
                     mask.removedAnns = mask.removedAnns.filter((a)=>{
                         if(a == ann){
@@ -317,6 +332,7 @@ function onLeftTriggerPress(event){
             zoomed = false;
             verify = false;
             mask.toRemove = [];
+            mask.currentSegmentCell = null;
             mask.newCells = [];
             quickFetch({action: "complete_segment"});
         }
@@ -351,7 +367,7 @@ function onLeftTriggerSqueezeStop(event){
     controller2.userData.squeezePressed = false;
 }
 
-function handleController(controller, dt){
+function handleMovement(controller, dt){
     /*  
     Well motion is wanted calculate the camera direction and move entire user object
     in that direction at a preset speed
@@ -405,15 +421,26 @@ function getAntColour(colour){
     }
 }
 
+function imageLoader(link){
+    let imageCall = {action: "loadImage"}
 
-function cellLoader(link){
+
+}
+
+function cellLoader(mask_link, image_link){
     /*
     Used to load in all cell objects based on the path provided by the
     backend which generates the objects
     Then applies the colouring to the cell and shrinks it by 10 to make them easier to maneuver around
     */
+   return new Promise((resolve, reject)=>{
+
+   
     function loading(data) {
         let loader = new OBJLoader();
+        let pendingloads = data.objPaths.length;
+        planes = new Planes(camera, controller1);
+        planes.image = data.image;
         for(let object of data.objPaths){
             loader.load(object.path, (obj)=>{
                 obj.traverse(function (child) {
@@ -431,11 +458,15 @@ function cellLoader(link){
                 });
 
             })
+            pendingloads -=1
+            if(pendingloads == 0){
+                resolve()
+            }
         }
     }
-    quickFetch({action: "load", mask_link: link }, loading);
+    quickFetch({action: "load", mask_link: mask_link, image_link: image_link}, loading);
 
-
+});
 }
 
 function onWindowResize() {
@@ -459,6 +490,9 @@ function render() {
     renderer.render( scene, camera );
 }
 
+
+
+
 function animate(){
     /*
     Calls the renderer and also keeps track if camera should be moving
@@ -466,8 +500,30 @@ function animate(){
     renderer.render(scene, camera);
     const dt = clock.getDelta();
     if (controller2 ) {
-        handleController( controller2, dt )};
+        handleMovement( controller2, dt )};
     renderer.render( scene, camera );
+
+    let currPos = new THREE.Vector3();
+    currPos.copy(controller1.position);
+    currPos.add(user.position);
+    currPos.multiplyScalar(10);
+
+    if(planes){
+        if(currPos.z !=planes.oldPos.z){
+            planes.updatePlane(planes.zPlane, currPos);
+            render();
+        }
+        if(currPos.y != planes.oldPos.y){
+            planes.updatePlane(planes.yPlane, currPos);
+            render();
+        }
+        if(currPos.x != planes.oldPos.x){
+            planes.updatePlane(planes.xPlane, currPos);
+            render();
+        }
+        planes.oldPos.copy(currPos);
+        planes.updatePlaneMarks(currPos);
+    }
 }
 
 
@@ -541,9 +597,9 @@ function updateAnns(data){
 
     } else{
         let loader = new OBJLoader();
+        mask.scene.remove(mask.currentSegmentCell.meshObj);
+        mask.anns.filter(a=>a!=mask.currentSegmentCell);
         for(let object of objs){
-            // mask.removeAnn(object.cell_num)
-            mask.toBeRemoved(object.cell_num);
             if(!object.remove){
                 loader.load(object.path, (obj)=>{
                     obj.traverse(function (child) {
@@ -569,3 +625,5 @@ function updateAnns(data){
     }
 
 }
+
+

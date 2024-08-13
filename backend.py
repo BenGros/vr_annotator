@@ -8,6 +8,7 @@ from vr_tool.create_cell_objects import all, full_segmentation, removeCell
 mask = None
 # Any unapproved updates to mask are here 
 updated_mask = None
+image = None
 
 class RequestHandler(SimpleHTTPRequestHandler):
     
@@ -15,6 +16,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
         # make masks global to be able to access constantly
         global mask
         global updated_mask
+        global image
         content_length = int(self.headers['Content-Length'])
         data = self.rfile.read(content_length)
         try:
@@ -52,7 +54,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "load"):
+                print(parsed_data)
                 link = parsed_data['mask_link']
+                im_link = parsed_data['image_link']
+                with open(im_link,'r') as f:
+                    image = np.array(json.load(f))[:,:,:]
 
                 with open(link,'r') as f:
                     # load the mask from provided link
@@ -61,7 +67,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     updated_mask = np.copy(mask)
                     # make the objects and pass the paths to the front end
                     all_obj_paths = all(mask)
-                    response_message = {'message': 'Data received successfully.', 'totalMask': mask.tolist(), 'objPaths': all_obj_paths}
+                    response_message = {'message': 'Data received successfully.', 'totalMask': mask.tolist(), 'objPaths': all_obj_paths, 'image': image.tolist()}
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()

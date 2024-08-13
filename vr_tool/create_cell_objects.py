@@ -1,10 +1,8 @@
 import numpy as np
-from skimage import measure
-import pyvista as pv
 from scipy import ndimage as ndi
-from skimage import filters, segmentation, measure
+from skimage import segmentation, measure
 import pyvista as pv
-import json
+import os
 
 def get_all_instances(mask):
     all_instances = []
@@ -70,18 +68,33 @@ def create_cell_mask(mask, bound_box, cell_num):
 def create_cell_object(cell_mask, save_path):
     # Use Pyvista to create the isosurface for the cell
     # Save the object
+    max = 0
+    min = 1000000
+    for num in np.nditer(cell_mask):
+        if(num < min):
+            min = num
+        if(num > max):
+            max = num
+    
+    print(f"max: {max} min: {min}")
+
     if(cell_mask.shape[0]>1 and cell_mask.shape[1]>1 and cell_mask.shape[2] >1):
-        correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
-        verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=0.5)
-        # Prepare the faces array for PyVista
-        faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
-        # Create a PyVista mesh from the marching cubes output
-        mesh = pv.PolyData(verts, faces_pv)
-        mesh.fill_holes(1000, True)
-        mesh.smooth(inplace=True)
-        mesh.compute_normals()
-        mesh.save(save_path)
-        return True
+        try:
+            correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
+            verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=0.1)
+            # Prepare the faces array for PyVista
+            faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
+            # Create a PyVista mesh from the marching cubes output
+            mesh = pv.PolyData(verts, faces_pv)
+            mesh.fill_holes(1000, True)
+            mesh.smooth(inplace=True)
+            mesh.compute_normals()
+            dir_path = "./vr_tool/objects"
+            os.makedirs(dir_path, exist_ok=True)
+            mesh.save(save_path)
+            return True
+        except:
+            return False
     
     return False
 
@@ -136,11 +149,10 @@ def separate_cells(mask, cell_num, markers, next_cell_num):
         count+=1
             
 
-    gradient = filters.sobel(cell_mask)
+    # gradient = filters.sobel(cell_mask)
     distance = ndi.distance_transform_edt(cell_mask)
     labels = segmentation.watershed(-distance, marker_mask, mask=cell_mask)
     np.save("mark.npy", marker_mask)
-    np.save("grad.npy", gradient)
     np.save("cell.npy", cell_mask)
     np.save("arr.npy", labels)
     return labels, all_cell_nums
