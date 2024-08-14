@@ -160,7 +160,7 @@ export class Mask{
         function loadCell(data){
             let object = data.object;
             let cellNums = data.cell_nums;
-            self.anns.filter(a=>!cellNums.includes(a.cellNum));
+            self.anns = self.anns.filter(a=>!cellNums.includes(a.cellNum));
             for(let num of cellNums){
                 self.removeAnn(num);
             }
@@ -241,26 +241,26 @@ export class Planes {
     Such as the array data and the last position of the controller
     */
     constructor(camera){
-        this.xPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.25,0.25), new THREE.MeshBasicMaterial({depthTest: false, color: 0xff0000})), axis: "x", texture: null} ;
-        this.yPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.25,0.25), new THREE.MeshBasicMaterial({depthTest: false})), axis: "y", texture: null};
-        this.zPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.25,0.25), new THREE.MeshBasicMaterial({depthTest: false})), axis: "z", texture: null};
+        this.xPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false, color: 0xff0000})), axis: "x", texture: null} ;
+        this.yPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false})), axis: "y", texture: null};
+        this.zPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false})), axis: "z", texture: null};
         this.oldPos = new THREE.Vector3(0,0,0);
         this.image = null;
         this.camera = camera
 
-        let background = new THREE.Mesh(new THREE.PlaneGeometry(1,0.5), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: false}))
+        let background = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.2), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: false}))
         background.renderOrder = 1
 
         this.camera.add(background)
-        background.position.set(-0.9,0,-0.5)
+        background.position.set(-0.2,0,-0.5)
 
         // Add the planes to the scene
         this.camera.add(this.xPlane.mesh);
-        this.xPlane.mesh.position.set(-1.25, 0, -0.5)
+        this.xPlane.mesh.position.set(-0.2, 0, -0.5)
         this.camera.add(this.yPlane.mesh);
-        this.yPlane.mesh.position.set(-0.9, 0, -0.5);
+        this.yPlane.mesh.position.set(-0.1, 0, -0.5);
         this.camera.add(this.zPlane.mesh);
-        this.zPlane.mesh.position.set(-0.55, 0, -0.5);
+        this.zPlane.mesh.position.set(0.0, 0, -0.5);
 
         // Ensure planes render on top of the cells so always visible
         this.xPlane.mesh.renderOrder = 99999;

@@ -437,12 +437,6 @@ function getAntColour(colour){
     }
 }
 
-function imageLoader(link){
-    let imageCall = {action: "loadImage"}
-
-
-}
-
 function cellLoader(mask_link, image_link){
     /*
     Used to load in all cell objects based on the path provided by the
@@ -587,7 +581,7 @@ function updateAnns(data){
     } else{
         let loader = new OBJLoader();
         mask.scene.remove(mask.currentSegmentCell.meshObj);
-        mask.anns.filter(a=>a!=mask.currentSegmentCell);
+        mask.anns = mask.anns.filter(a=>a!=mask.currentSegmentCell);
         for(let object of objs){
             if(!object.remove){
                 loader.load(object.path, (obj)=>{
