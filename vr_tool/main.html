@@ -15,6 +15,7 @@
         }
       }
     </script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
       #info {
         position: absolute;
@@ -24,6 +25,11 @@
         z-index: 100;
         display: block;
       }
+      .inputs {
+        width: 400px;
+        margin: 10px;
+        height: 20px;
+      }
     </style>
   </head>
   <body>
@@ -31,6 +37,15 @@
       <h1>Enter the path to the mask file relative to the vr_tool directory</h1>
       <form>
         <input
+          class="inputs"
+          id="imagePath"
+          type="text"
+          placeholder="Image Data Path"
+          style="display: inline"
+        />
+        <br />
+        <input
+          class="inputs"
           id="maskDP"
           type="text"
           placeholder="Mask Data Path"
@@ -41,6 +56,7 @@
       </form>
     </div>
     <div id="inset"></div>
+    <div id="heatmap" style="width: 600px; height: 400px"></div>
     <script src="vis.js" type="module"></script>
   </body>
 </html>
