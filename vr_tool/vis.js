@@ -17,7 +17,6 @@ let oldpos;
 // VR Controls
 let controller1, controller2, cgrip1, cgrip2, hand1, hand2;
 
-let volconfig;
 let dummyCam;
 let dummyController;
 
@@ -30,6 +29,8 @@ let guiMesh;
 let group, user, planes;
 
 let raycaster;
+
+let holdTime = 0;
 
 // For loading files
 let mask_data_path = '';
@@ -52,7 +53,7 @@ form.addEventListener('submit', async (event)=>{
     mask_data_path = oldMaskInp.value
     image_data_path = newImageInp.value;
 
-    // initialize scene
+    // initialize scene, which includes waiting for all cells to load in
     await init();
 
     
@@ -103,7 +104,6 @@ async function init(){
     user.add(controller1);
 
     controller2 = renderer.xr.getController(1);
-    
     user.add(controller2);
 
     dummyController = new THREE.Object3D();
@@ -126,9 +126,7 @@ async function init(){
 
     hand2 = renderer.xr.getHand(1);
     user.add(hand2);
-
     
-
     // Add guide line to right handed controller
     const lineGeom = new THREE.BufferGeometry();
     lineGeom.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
@@ -143,7 +141,8 @@ async function init(){
     // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
     controller1.addEventListener('selectstart', onRightTriggerPress);
     // Will either mark the centre of a cell for removal or mark an entire cell for removal
-    controller1.addEventListener('squeezestart', onRightSqueeze);
+    controller1.addEventListener('squeezestart', onRightSqueezeStart);
+    controller1.addEventListener('squeezeend', onRightSqueezeStop);
     // Will send request back to backend for removals and segmentations
     controller2.addEventListener('selectstart', onLeftTriggerPress);
     // Start movement
@@ -151,12 +150,6 @@ async function init(){
     // End movement
     controller2.addEventListener('squeezeend', onLeftTriggerSqueezeStop);
 
-    // Gui setting the user can control
-    volconfig = {threshMin: 500, threshMax: 800, channel: 0,
-        chunkX: 32, chunkY: 32, chunkZ: 32, chunkNum: 0,
-        colourMin: 500, colourMax: 1000, cubeSize: 1,
-        removeAnnotations: 0, showMask: 1
-    };
 
     // Build out GUI
     gui = new GUI({width: 300});
@@ -241,6 +234,7 @@ function onRightTriggerPress(event) {
             if(castedObjects != null){
                 let ann = mask.meshToAnn(castedObjects.mItem);
                 if(ann != undefined && ann.meshObj.material.color != 0x000000){
+                    console.log("HIghlight")
                     mask.highlightOne(ann.cellNum)
                     mask.currentSegmentCell = ann;
                     ann.meshObj.material.opacity = 0.5
@@ -317,6 +311,43 @@ function onRightSqueeze(event){
 
 }
 
+function onRightSqueezeStart(event){
+    holdTime = Date.now();
+}
+
+function onRightSqueezeStop(event){
+    holdTime = Date.now() - holdTime;
+    if(holdTime > 1900){
+        merge();
+    } else {
+        console.log("HERE")
+        if(!zoomed){
+            let meshList = []
+            for(let ann of mask.anns){
+                meshList.push(ann.meshObj);
+            }
+    
+            let castedObjects = checkIntersection(meshList);
+            if(castedObjects != null){
+                let ann = mask.meshToAnn(castedObjects.mItem);
+                mask.markForRemove(ann);
+            }
+        } else {
+            if(verify){
+                mask.unHighlight();
+                markedCell = [];
+                zoomed = false;
+                verify = false;
+                mask.removeNew();
+    
+            } else {
+                markCellCentre(true);
+            }
+        }
+
+    }
+}
+
 function onLeftTriggerPress(event){
     /*
     If a centre is marked use the segmenting function
@@ -338,26 +369,11 @@ function onLeftTriggerPress(event){
         }
     } else if(mask.removedAnns.length > 0){
         mask.removeAllAnns();
-    } else {
-
-
     }
     
 }
 
 function onLeftTriggerSqueezeStart(event){
-    /*
-    Used to start motion 
-    variable can be used in animate to start and stop motion
-    */
-    // console.log(controller1.position)
-    // // for opening and closing gui
-    // if(guiMesh.scale.x > 0){
-    //     guiMesh.scale.setScalar(0)
-    // } else {
-    //     guiMesh.scale.setScalar(4);
-    //     guiMesh.position.copy(controller2.position);
-    // }
 
     controller2.userData.squeezePressed = true;
 }
@@ -511,45 +527,18 @@ function animate(){
     if(planes){
         if(currPos.z !=planes.oldPos.z){
             planes.updatePlane(planes.zPlane, currPos);
-            render();
         }
         if(currPos.y != planes.oldPos.y){
             planes.updatePlane(planes.yPlane, currPos);
-            render();
         }
         if(currPos.x != planes.oldPos.x){
             planes.updatePlane(planes.xPlane, currPos);
-            render();
         }
         planes.oldPos.copy(currPos);
         planes.updatePlaneMarks(currPos);
     }
 }
 
-
-
-function chunkToCoords(chunkNum){
-    switch(chunkNum){
-        case 0:
-            return {x: 0, y: 0, z: 0};
-        case 1:
-            return {x: 1, y: 0, z: 0};
-        case 2:
-            return {x: 0, y: 1, z: 0};
-        case 3:
-            return {x: 1, y: 1, z: 0};
-        case 4:
-            return {x: 0, y: 0, z: 1};
-        case 5:
-            return {x: 1, y: 0, z: 1};
-        case 6:
-            return {x: 0, y: 1, z: 1};
-        case 7:
-            return {x: 1, y: 1, z: 1};
-        default:
-            return null;
-    }
-}
 
 function markCellCentre(remove){
     /*
@@ -622,6 +611,47 @@ function updateAnns(data){
         }
         mask.removeSegHelpers();
         verify = true;
+    }
+
+}
+
+function merge(){
+    let cell_nums = []
+    for (let ann of mask.removedAnns){
+        cell_nums.push(ann.cellNum);
+    }
+
+    quickFetch({action: "merge", cell_nums: cell_nums}, loadCell);
+
+
+    function loadCell(data){
+        let object = data.object;
+        let cellNums = data.cell_nums;
+        mask.anns.filter(a=>!cellNums.includes(a.cellNum));
+        for(let num of cellNums){
+            mask.removeAnn(num);
+        }
+        let loader = new OBJLoader();
+        loader.load(object.path, (obj)=>{
+            obj.traverse(function (child) {
+                if (child.isMesh) {
+                    child.material.color.set(getAntColour((object.cell_num)%15).code);
+                    child.material.side = THREE.DoubleSide
+                    child.position.set(0,0,0)
+                    child.scale.set(0.1,0.1,0.1)
+                    
+                    child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                    
+                    let ann = new Ann(child, object.cell_num);
+                    mask.addAnn(ann)
+                }
+            });
+
+        })
+
+        mask.removedAnns = [];
+
+
     }
 
 }

@@ -2,7 +2,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import json
 import numpy as np
 
-from vr_tool.create_cell_objects import all, full_segmentation, removeCell
+from vr_tool.create_cell_objects import all, full_segmentation, removeCell, merge_cells
 
 # Hold the mask to be saved
 mask = None
@@ -97,6 +97,14 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
+            elif(parsed_data['action']=="merge"):
+                updated_mask, rdata = merge_cells(updated_mask, parsed_data['cell_nums'])
+                self.send_response(200)
+                response_message = {'message': 'Data received successfully.', 'object': rdata['object'], 'cell_nums': rdata['cell_nums'] }
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
+
 
         except json.JSONDecodeError:
             self.send_response(400)

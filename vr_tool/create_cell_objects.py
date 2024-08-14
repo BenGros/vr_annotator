@@ -5,11 +5,17 @@ import pyvista as pv
 import os
 
 def get_all_instances(mask):
-    all_instances = []
+    """
+    This function is used to return all the cell numbers from the mask
+    Iterates through the entire mask adds it to a set to ensure we only get one 
+    copy of the number
+    """
+    all_instances = set()
     for num in np.nditer(mask):
-        if(num > 0 and (num not in all_instances)):
-            num = int(num)
-            all_instances.append(num)
+        all_instances.add(int(num))
+    all_instances = list(all_instances)
+    all_instances.sort()
+        
 
     return all_instances
 
@@ -230,3 +236,25 @@ def full_segmentation(umask, cell_num, markers, next_cell_num):
     objects = make_new_objects(umask, new_cells[1])
     return objects
 
+
+def merge_cells(mask, cell_nums):
+    for num in np.nditer(mask, op_flags=['readwrite']):
+        if(num in cell_nums):
+            num[...] = cell_nums[0]
+
+    
+    obj_info = {"path": f"./objects/{cell_nums[0]}.obj", "min_coords": None, "max_coords": None, "cell_num": cell_nums[0]}
+    
+    box = create_cell_bound_box(mask, cell_nums[0])
+    c_mask = create_cell_mask(mask, box, cell_nums[0])
+    create_cell_object(c_mask, f"./vr_tool/objects/{cell_nums[0]}.obj")
+
+    obj_info['min_coords'] = {"x": box[0], "y": box[2], "z": box[4]}
+    obj_info['max_coords'] = {"x": box[1], "y": box[3], "z": box[5]}
+
+    return_data = {'object': obj_info, 'cell_nums': cell_nums}
+
+    
+
+
+    return mask, return_data

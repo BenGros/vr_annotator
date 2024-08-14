@@ -1,6 +1,11 @@
 import * as THREE from 'three';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 export class Mask{
+    /*
+    This class is used to hold all the information relevant to the cell objects
+    This includes the cells themselves, and other lists for removing and segmenting cells
+    */
 
     constructor(scene){
         this.totalMask = null;
@@ -15,30 +20,37 @@ export class Mask{
     }
 
     addAnn(ann){
+        // used to add ann to scene and list to be called for later
         this.anns.push(ann);
         this.scene.add(ann.meshObj);
     }
 
     markForRemove(ann){
-            this.removedAnns.push(ann);
-            ann.meshObj.material.color.set(0x000000);
+        /* Users can mark cell for removal which signals 
+        that they are going to be removed. By marking them and not
+        instantly removing them the user has the oppurtunity to unmark them
+        */
+        this.removedAnns.push(ann);
+        ann.meshObj.material.color.set(0x000000);
     }
 
     removeAnn(cellNum){
+        /* 
+        Remove a cell from the scene and the main array by the cell number
+        */
         for(let a of this.anns){
             if(a.cellNum == cellNum){
                 this.scene.remove(a.meshObj);
             }
         }
-        this.anns = this.anns.filter((a)=>{
-            if(a.cellNum == cellNum){
-                return false;
-            }
-            return true;
-        })
+        this.anns = this.anns.filter((a)=>{ return a.cellNum != cellNum})
     }
 
     removeAllAnns(){
+        /*
+        Execute the removal of the marked cells
+        Makes fetch to remove the cells from the mask on the backend
+        */
         for(let ann of this.removedAnns){
             this.removeAnn(ann.cellNum)
         }
@@ -49,15 +61,21 @@ export class Mask{
     
 
     hideAnn(ann){
+        /* Will hide a cell when called but store in a list to be returned */
         this.scene.remove(ann.meshObj);
         this.hiddenAnns.push(ann);
     }
 
     updateMask(){
+        // Make save fetch which will write to the original mask file
         quickFetch({action: "save"})
     }
     
     highlightOne(cellNum){
+        /* Will hide every other cell
+        Used to allow the user to easily annotate a cell without other cells getting
+        in the way.
+        */
         for(let ann of this.anns){
             if(ann.cellNum != cellNum){
                 console.log("Here")
@@ -70,6 +88,7 @@ export class Mask{
     }
 
     unHighlight(){
+        /* Will unhide the other cells to return to normal */
         while(this.hiddenAnns.length > 0){
             let ann = this.hiddenAnns.pop();
             this.scene.add(ann.meshObj);
@@ -77,6 +96,9 @@ export class Mask{
     }
 
     meshToAnn(mesh){
+        /* Will return the ann from the mesh 
+        Mostly used to get this cell number 
+        */
         for(let ann of this.anns){
             if(mesh == ann.meshObj){
                 return ann;
@@ -85,6 +107,7 @@ export class Mask{
     }
 
     getNextCellNum(){
+        // Return the next cell number to be used by fidning max and adding one
         let max = 0;
         for(let ann of this.anns){
             if(ann.cellNum > max){
@@ -96,6 +119,7 @@ export class Mask{
 
     }
     removeSegHelpers(){
+        // Removes the cubes to mark the centre of the cells
         while(this.segHelpers.length > 0){
             let help = this.segHelpers.pop()
             this.scene.remove(help)
@@ -103,6 +127,13 @@ export class Mask{
     }
 
     removeNew(){
+        /*
+        This method is called when a user ends up not wanting to use
+        the segmentation that occured.
+
+        Removes the cell from the scene and records it cell number so it
+        can be removed from the array and turned back into the original cell
+        */
         let oldCellNums = [];
         while(this.newCells.length > 0){
             let ann = this.newCells.pop();
@@ -115,10 +146,51 @@ export class Mask{
         this.addAnn(this.currentSegmentCell);
 
     }
+
+    merge(){
+        let cell_nums = []
+        for (let ann of this.removedAnns){
+            cell_nums.push(ann.cellNum);
+        }
+
+        let self = this
+        quickFetch({action: "merge", cell_nums: cell_nums}, loadCell);
+
+
+        function loadCell(data){
+            let object = data.object;
+            let cellNums = data.cell_nums;
+            self.anns.filter(a=>!cellNums.includes(a.cellNum));
+            for(let num of cellNums){
+                self.removeAnn(num);
+            }
+            let loader = new OBJLoader();
+            loader.load(object.path, (obj)=>{
+                obj.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.material.color.set(getAntColour((object.cell_num)%15).code);
+                        child.material.side = THREE.DoubleSide
+                        child.position.set(0,0,0)
+                        child.scale.set(0.1,0.1,0.1)
+                        
+                        child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                        
+                        let ann = new Ann(child, object.cell_num);
+                        self.addAnn(ann)
+                    }
+                });
+
+            })
+
+
+        }
+
+    }
 }
 
 
 export class Ann {
+    // Used to hold cell identifier and the mesh
     constructor(meshObj, cellNum){
         this.meshObj = meshObj;
         this.cellNum = cellNum;
@@ -126,6 +198,11 @@ export class Ann {
 }
 
 export function quickFetch(body, callFunc){
+    /*
+    Basic fetch function to simplify fetch calls in other methods
+    Allows the user to send an object to the backend and then use 
+    a callback function on the data received. Can also not use any function if not needed
+    */
     console.log(body)
     fetch("http://127.0.0.1:8080/", {
         method: "POST",
@@ -159,6 +236,10 @@ export function quickFetch(body, callFunc){
 
 
 export class Planes {
+    /*
+    This class is used to store the 3 axis planes and other relevant information for them
+    Such as the array data and the last position of the controller
+    */
     constructor(camera){
         this.xPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.25,0.25), new THREE.MeshBasicMaterial({depthTest: false, color: 0xff0000})), axis: "x", texture: null} ;
         this.yPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.25,0.25), new THREE.MeshBasicMaterial({depthTest: false})), axis: "y", texture: null};
@@ -167,6 +248,13 @@ export class Planes {
         this.image = null;
         this.camera = camera
 
+        let background = new THREE.Mesh(new THREE.PlaneGeometry(1,0.5), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: false}))
+        background.renderOrder = 1
+
+        this.camera.add(background)
+        background.position.set(-0.9,0,-0.5)
+
+        // Add the planes to the scene
         this.camera.add(this.xPlane.mesh);
         this.xPlane.mesh.position.set(-1.25, 0, -0.5)
         this.camera.add(this.yPlane.mesh);
@@ -174,12 +262,23 @@ export class Planes {
         this.camera.add(this.zPlane.mesh);
         this.zPlane.mesh.position.set(-0.55, 0, -0.5);
 
+        // Ensure planes render on top of the cells so always visible
         this.xPlane.mesh.renderOrder = 99999;
         this.yPlane.mesh.renderOrder = 99999;
         this.zPlane.mesh.renderOrder = 99999;
     }
 
     updatePlane(plane, pos){
+        /*
+        Takes in one of the 3 axis planes and the current controller1 position
+        It will then identify the slice for the plane 
+        Once the slice is identified it will create a map for that plane
+        This map is then applied to the plane mesh and updated.
+
+        These maps help the user understand where they are located and what
+        the true image looks like for their position
+        The maps are updated any time the controller position moves
+        */
         let slice = 0;
         let axis = plane.axis;
         if(axis == "z"){
@@ -194,22 +293,6 @@ export class Planes {
         } else if (slice < 0){
             slice = 0;
         }
-        let material = plane.mesh.material;
-        let max = 0;
-        let min = 100000;
-        for(let z = 0; z<64; z++){
-            for (let y = 0; y < 64; y++) {
-                for (let x = 0; x < 64; x++) {
-                    if(this.image[z][y][x] > max){
-                        max = this.image[z][y][x]
-                    }
-                    if(this.image[z][y][x] < min){
-                        min = this.image[z][y][x]
-                    }
-                }
-            }
-        }
-        console.log(`max: ${max} min: ${min}`)
 
         let dataText = new Uint8Array(64*64 * 4);
         for (let y = 0; y < 64; y++) {
@@ -223,14 +306,12 @@ export class Planes {
                 } else {
                     dp = this.image[y][x][Math.round(slice)];
                 }
-                if(dp < 200){dp = min}
-                dataText[index] = (dp-min)/(max-min)*255 // Red
-                dataText[index + 1] = (dp-min)/(max-min)*255; // Green
-                dataText[index + 2] = (dp-min)/(max-min)*255; // Blue (0 for no blue component)
+                dataText[index] = dp; // Red
+                dataText[index + 1] = dp; // Green
+                dataText[index + 2] = dp; // Blue (0 for no blue component)
                 dataText[index + 3] =255;
             }
         }
-        console.log(dataText)
 
         const texture = new THREE.DataTexture(
             dataText,
@@ -254,6 +335,12 @@ export class Planes {
     }
 
     updatePlaneMarks(pos){
+        /*
+        Takes in the current controller1 position and finds the point in each axis for the array
+        It then updates each of the planes to show a red mark where the user currently is
+        This is to help the user identify what the real image looks like at their current position
+        */
+
         let zTextureData = new Uint8Array(this.zPlane.texture.image.data);
         let zInd = (Math.round(pos.y) * 64 + Math.round(pos.x))*4
         zTextureData[zInd] = 255;
