@@ -146,46 +146,6 @@ export class Mask{
         this.addAnn(this.currentSegmentCell);
 
     }
-
-    merge(){
-        let cell_nums = []
-        for (let ann of this.removedAnns){
-            cell_nums.push(ann.cellNum);
-        }
-
-        let self = this
-        quickFetch({action: "merge", cell_nums: cell_nums}, loadCell);
-
-
-        function loadCell(data){
-            let object = data.object;
-            let cellNums = data.cell_nums;
-            self.anns = self.anns.filter(a=>!cellNums.includes(a.cellNum));
-            for(let num of cellNums){
-                self.removeAnn(num);
-            }
-            let loader = new OBJLoader();
-            loader.load(object.path, (obj)=>{
-                obj.traverse(function (child) {
-                    if (child.isMesh) {
-                        child.material.color.set(getAntColour((object.cell_num)%15).code);
-                        child.material.side = THREE.DoubleSide
-                        child.position.set(0,0,0)
-                        child.scale.set(0.1,0.1,0.1)
-                        
-                        child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
-                        
-                        let ann = new Ann(child, object.cell_num);
-                        self.addAnn(ann)
-                    }
-                });
-
-            })
-
-
-        }
-
-    }
 }
 
 

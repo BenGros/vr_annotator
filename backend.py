@@ -23,13 +23,15 @@ class RequestHandler(SimpleHTTPRequestHandler):
             # Process the received data
             parsed_data = json.loads(data.decode('utf-8'))
             if(parsed_data['action'] == "save"):
+                print("SVAED")
+                link = parsed_data['link']
                 # write out mask
-                with open(link,'r') as f:
-                    whole_mask = np.array(json.load(f))
-                    whole_mask[:,:,:] = mask
+                # with open(link,'r') as f:
+                #     whole_mask = np.array(json.load(f))
+                #     whole_mask[:,:,:] = mask
 
-                with open("file.json", 'w') as f:
-                    f.write(json.dumps(whole_mask))
+                with open(link, 'w') as f:
+                    f.write(json.dumps(mask.tolist()))
 
                 response_message = {'message': 'Saved Successfully.'}
                 self.send_response(200)
@@ -99,6 +101,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif(parsed_data['action']=="merge"):
                 updated_mask, rdata = merge_cells(updated_mask, parsed_data['cell_nums'])
+                mask = np.copy(updated_mask)
                 self.send_response(200)
                 response_message = {'message': 'Data received successfully.', 'object': rdata['object'], 'cell_nums': rdata['cell_nums'] }
                 self.send_header('Content-Type', 'application/json')

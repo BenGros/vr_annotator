@@ -30,11 +30,13 @@ let group, user, planes;
 
 let raycaster;
 
-let holdTime = 0;
+let rightSquuezeHoldTime = 0;
+let rightTriggerHoldTime = 0;
 
 // For loading files
 let mask_data_path = '';
 let image_data_path = '';
+let savePath = '';
 
 let markedCell = [];
 
@@ -47,11 +49,18 @@ let clock;
 // html pieces for receiving path input
 const oldMaskInp = document.getElementById('maskDP');
 const form = document.getElementById('paths');
-const newImageInp = document.getElementById('imagePath')
+const newImageInp = document.getElementById('imagePath');
+const newSavePath = document.getElementById("newSavePath");
+const saveCheck = document.getElementById("saveLoc")
 form.addEventListener('submit', async (event)=>{
     event.preventDefault()
     mask_data_path = oldMaskInp.value
     image_data_path = newImageInp.value;
+    if(saveCheck.checked){
+        savePath = newSavePath.value;
+    } else{
+        savePath = mask_data_path;
+    }
 
     // initialize scene, which includes waiting for all cells to load in
     await init();
@@ -139,7 +148,8 @@ async function init(){
     user.position.set(1.6,0.4,4);
 
     // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
-    controller1.addEventListener('selectstart', onRightTriggerPress);
+    controller1.addEventListener('selectstart', onRightTriggerStart);
+    controller1.addEventListener('selectend', onRightTriggerStop);
     // Will either mark the centre of a cell for removal or mark an entire cell for removal
     controller1.addEventListener('squeezestart', onRightSqueezeStart);
     controller1.addEventListener('squeezeend', onRightSqueezeStop);
@@ -278,6 +288,75 @@ function onRightTriggerPress(event) {
     }
 }
 
+function onRightTriggerStart(){
+    rightTriggerHoldTime = Date.now();
+}
+
+function onRightTriggerStop(){
+    rightTriggerHoldTime = Date.now() - rightTriggerHoldTime;
+    if(rightTriggerHoldTime > 3000){
+        quickFetch({action: "save", link: savePath})
+    } else {
+        if(!zoomed){
+            if(mask.removedAnns.length <1){
+    
+                let meshList = []
+                for(let ann of mask.anns){
+                    meshList.push(ann.meshObj)
+                }
+    
+                let castedObjects = checkIntersection(meshList);
+    
+                if(castedObjects != null){
+                    let ann = mask.meshToAnn(castedObjects.mItem);
+                    if(ann != undefined && ann.meshObj.material.color != 0x000000){
+                        console.log("HIghlight")
+                        mask.highlightOne(ann.cellNum)
+                        mask.currentSegmentCell = ann;
+                        ann.meshObj.material.opacity = 0.5
+                        ann.meshObj.material.transparent = true;
+                        zoomed = true;
+                        mask.currentCell = ann.cellNum
+                    } else if (ann != undefined){
+                        ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+                        mask.removedAnns = mask.removedAnns.filter((a)=>{
+                            if(a == ann){
+                                return false;
+                            }
+                            return true;
+                        })
+                    }
+                }
+            } else {
+                let meshList = []
+                for(let ann of mask.removedAnns){
+                    meshList.push(ann.meshObj)
+                }
+    
+                let castedObjects = checkIntersection(meshList);
+                if(castedObjects != null){
+                    let ann = mask.meshToAnn(castedObjects.mItem);
+                    if (ann != undefined){
+                        ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+                        mask.removedAnns = mask.removedAnns.filter((a)=>{
+                            if(a == ann){
+                                return false;
+                            }
+                            return true;
+                        })
+                    }
+    
+                }
+    
+            }
+        } else {
+            markCellCentre(false);
+        }
+
+    }
+}
+
+
 function onRightSqueeze(event){
     /*
     Similar to trigger press except if not zoomed
@@ -312,12 +391,12 @@ function onRightSqueeze(event){
 }
 
 function onRightSqueezeStart(event){
-    holdTime = Date.now();
+    rightSquuezeHoldTime = Date.now();
 }
 
 function onRightSqueezeStop(event){
-    holdTime = Date.now() - holdTime;
-    if(holdTime > 1900){
+    rightSquuezeHoldTime = Date.now() - rightSquuezeHoldTime;
+    if(rightSquuezeHoldTime > 1900){
         merge();
     } else {
         console.log("HERE")
@@ -610,6 +689,12 @@ function updateAnns(data){
 }
 
 function merge(){
+    /*
+    This function is used to combine two or more cells into one cell
+    Uses the same marking that the removal does meaning 
+    marked cells can be rmeoved or merged
+
+    */
     let cell_nums = []
     for (let ann of mask.removedAnns){
         cell_nums.push(ann.cellNum);
@@ -619,9 +704,13 @@ function merge(){
 
 
     function loadCell(data){
+        /*
+        Similar function to update anns just a few less features since it is 
+        only one object and it should never be removed
+        */
         let object = data.object;
         let cellNums = data.cell_nums;
-        mask.anns.filter(a=>!cellNums.includes(a.cellNum));
+        mask.anns = mask.anns.filter(a=>!cellNums.includes(a.cellNum));
         for(let num of cellNums){
             mask.removeAnn(num);
         }

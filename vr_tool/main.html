@@ -43,6 +43,7 @@
           placeholder="Image Data Path"
           style="display: inline"
         />
+        <button type="button" id="imBtn">Clear</button>
         <br />
         <input
           class="inputs"
@@ -51,12 +52,16 @@
           placeholder="Mask Data Path"
           style="display: inline"
         />
-        <input id="subBtn" type="submit" />
+        <button type="button" id="maskBtn">Clear</button>
+        <br />
+        <label>New Save Location</label>
+        <input type="checkbox" id="saveLoc" />
+        <input type="text" placeholder="save path" id="newSavePath" />
+        <input id="subBtn" type="submit" value="Submit" />
         <h1 id="loaded"></h1>
       </form>
     </div>
-    <div id="inset"></div>
-    <div id="heatmap" style="width: 600px; height: 400px"></div>
     <script src="vis.js" type="module"></script>
+    <script src="main.js"></script>
   </body>
 </html>
