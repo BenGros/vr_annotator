@@ -45,6 +45,7 @@ let zoomed = false;
 let verify = false;
 
 let clock;
+let groupSelected = false;
 
 // html pieces for receiving path input
 const oldMaskInp = document.getElementById('maskDP');
@@ -65,7 +66,6 @@ form.addEventListener('submit', async (event)=>{
     // initialize scene, which includes waiting for all cells to load in
     await init();
 
-    
     // Allow user to enter vr
     document.getElementById('loaded').innerHTML = "Image Loaded"
     document.body.appendChild( VRButton.createButton( renderer ) );
@@ -74,6 +74,11 @@ form.addEventListener('submit', async (event)=>{
 // Initialization
 // TODO: Break into smaller parts
 async function init(){
+    /*
+    Make init an async function to ensure the vr button is not added until after the cells are loaded
+    Init is wrapped in a promise that is resolved once the cell promise is resolved. Can now just use await
+    when init is called to enforce this behaviour.
+    */
     return new Promise((resolve, reject)=>{
         // Basic Scene Setup
     scene = new THREE.Scene();
@@ -109,10 +114,10 @@ async function init(){
     mask = new Mask(scene);
 
     // setup VR controllers and add to user object for movement
-    controller1 = renderer.xr.getController(0);
+    controller1 = renderer.xr.getController(1);
     user.add(controller1);
 
-    controller2 = renderer.xr.getController(1);
+    controller2 = renderer.xr.getController(0);
     user.add(controller2);
 
     dummyController = new THREE.Object3D();
@@ -194,8 +199,6 @@ async function init(){
     oldpos.multiplyScalar(10);
 
     })
-    
-    
 }
 
 function checkIntersection(meshList){
@@ -221,8 +224,15 @@ function checkIntersection(meshList){
     return null;
 }
 
+function onRightTriggerStart(){
+    rightTriggerHoldTime = Date.now();
+    let planeObj = checkIntersection(planes.planeGroup.children);
+    if(planeObj != null){
+        groupSelected = true;
+    }
+}
 
-function onRightTriggerPress(event) {
+function onRightTriggerStop(){
     /* Check if zoomed in on one cell
     If not use raycaster to detect the interacted cell and zoom in 
     on it.
@@ -231,102 +241,39 @@ function onRightTriggerPress(event) {
     is to be segmented and kept
     */
 
-    if(!zoomed){
-        if(mask.removedAnns.length <1){
-
-            let meshList = []
-            for(let ann of mask.anns){
-                meshList.push(ann.meshObj)
-            }
-
-            let castedObjects = checkIntersection(meshList);
-
-            if(castedObjects != null){
-                let ann = mask.meshToAnn(castedObjects.mItem);
-                if(ann != undefined && ann.meshObj.material.color != 0x000000){
-                    console.log("HIghlight")
-                    mask.highlightOne(ann.cellNum)
-                    mask.currentSegmentCell = ann;
-                    ann.meshObj.material.opacity = 0.5
-                    ann.meshObj.material.transparent = true;
-                    zoomed = true;
-                    mask.currentCell = ann.cellNum
-                } else if (ann != undefined){
-                    ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
-                    mask.removedAnns = mask.removedAnns.filter((a)=>{
-                        if(a == ann){
-                            return false;
-                        }
-                        return true;
-                    })
-                }
-            }
-        } else {
-            let meshList = []
-            for(let ann of mask.removedAnns){
-                meshList.push(ann.meshObj)
-            }
-
-            let castedObjects = checkIntersection(meshList);
-            if(castedObjects != null){
-                let ann = mask.meshToAnn(castedObjects.mItem);
-                if (ann != undefined){
-                    ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
-                    mask.removedAnns = mask.removedAnns.filter((a)=>{
-                        if(a == ann){
-                            return false;
-                        }
-                        return true;
-                    })
-                }
-
-            }
-
-        }
-    } else {
-        markCellCentre(false);
-    }
-}
-
-function onRightTriggerStart(){
-    rightTriggerHoldTime = Date.now();
-}
-
-function onRightTriggerStop(){
+   // See how long the press was
     rightTriggerHoldTime = Date.now() - rightTriggerHoldTime;
-    if(rightTriggerHoldTime > 3000){
+    // save the mask if longer than 3 seconds
+    if(rightTriggerHoldTime > 3000 && !groupSelected){
         quickFetch({action: "save", link: savePath})
-    } else {
+    } else if(!groupSelected){
+        // Make sure a cell is not highlighted
         if(!zoomed){
+            // not trying to merge or remove any cells
             if(mask.removedAnns.length <1){
     
+                // create list of mesh to intersect
                 let meshList = []
                 for(let ann of mask.anns){
                     meshList.push(ann.meshObj)
                 }
     
                 let castedObjects = checkIntersection(meshList);
-    
+                
+                // make sure at least one object was intersected
                 if(castedObjects != null){
                     let ann = mask.meshToAnn(castedObjects.mItem);
+                    // treat as cell to be segmented
                     if(ann != undefined && ann.meshObj.material.color != 0x000000){
-                        console.log("HIghlight")
                         mask.highlightOne(ann.cellNum)
                         mask.currentSegmentCell = ann;
                         ann.meshObj.material.opacity = 0.5
                         ann.meshObj.material.transparent = true;
                         zoomed = true;
                         mask.currentCell = ann.cellNum
-                    } else if (ann != undefined){
-                        ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
-                        mask.removedAnns = mask.removedAnns.filter((a)=>{
-                            if(a == ann){
-                                return false;
-                            }
-                            return true;
-                        })
-                    }
+                    } 
                 }
+                // unmark a cell that was to be removed
             } else {
                 let meshList = []
                 for(let ann of mask.removedAnns){
@@ -338,56 +285,17 @@ function onRightTriggerStop(){
                     let ann = mask.meshToAnn(castedObjects.mItem);
                     if (ann != undefined){
                         ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
-                        mask.removedAnns = mask.removedAnns.filter((a)=>{
-                            if(a == ann){
-                                return false;
-                            }
-                            return true;
-                        })
+                        mask.removedAnns = mask.removedAnns.filter((a)=>{return a!=ann});
                     }
-    
                 }
-    
             }
+            // if a cell is highlighted mark the centre
         } else {
             markCellCentre(false);
         }
-
-    }
-}
-
-
-function onRightSqueeze(event){
-    /*
-    Similar to trigger press except if not zoomed
-    mark the entire cell for removal by turning it black
-    If it is zoomed mark the cell centre for segmenting and removal
-    (Used to remove parts of a cell that don't belong)
-    */
-    if(!zoomed){
-        let meshList = []
-        for(let ann of mask.anns){
-            meshList.push(ann.meshObj);
-        }
-
-        let castedObjects = checkIntersection(meshList);
-        if(castedObjects != null){
-            let ann = mask.meshToAnn(castedObjects.mItem);
-            mask.markForRemove(ann);
-        }
     } else {
-        if(verify){
-            mask.unHighlight();
-            markedCell = [];
-            zoomed = false;
-            verify = false;
-            mask.removeNew();
-
-        } else {
-            markCellCentre(true);
-        }
+        groupSelected = false;
     }
-
 }
 
 function onRightSqueezeStart(event){
@@ -395,11 +303,16 @@ function onRightSqueezeStart(event){
 }
 
 function onRightSqueezeStop(event){
+    /*
+    Similar to trigger press except if not zoomed
+    mark the entire cell for removal by turning it black
+    If it is zoomed mark the cell centre for segmenting and removal
+    (Used to remove parts of a cell that don't belong)
+    */
     rightSquuezeHoldTime = Date.now() - rightSquuezeHoldTime;
     if(rightSquuezeHoldTime > 1900){
         merge();
     } else {
-        console.log("HERE")
         if(!zoomed){
             let meshList = []
             for(let ann of mask.anns){
@@ -418,12 +331,10 @@ function onRightSqueezeStop(event){
                 zoomed = false;
                 verify = false;
                 mask.removeNew();
-    
             } else {
                 markCellCentre(true);
             }
         }
-
     }
 }
 
@@ -477,7 +388,6 @@ function handleMovement(controller, dt){
         user.translateZ(-dt*speed);
         user.quaternion.copy(quaternion);
     }
-
 }
 
 function getAntColour(colour){
@@ -521,9 +431,11 @@ function cellLoader(mask_link, image_link){
     Used to load in all cell objects based on the path provided by the
     backend which generates the objects
     Then applies the colouring to the cell and shrinks it by 10 to make them easier to maneuver around
+
+    Returns a promise that is resolved when all the loads are finished. This ensures the user does not have access
+    to the vr mode until the cells are loaded.
     */
    return new Promise((resolve, reject)=>{
-
    
     function loading(data) {
         let loader = new OBJLoader();
@@ -579,14 +491,18 @@ function render() {
     renderer.render( scene, camera );
 }
 
-
-
-
 function animate(){
     /*
-    Calls the renderer and also keeps track if camera should be moving
+    Calls renderer to ensure everything updates
+
+    Watches for the left controller as if it is squeezed 
+    it has to move the user 
+
+    Monitors the right controller position and if it moves
+    will update the image planes as needed
     */
     renderer.render(scene, camera);
+
     const dt = clock.getDelta();
     if (controller2 ) {
         handleMovement( controller2, dt )};
@@ -597,7 +513,12 @@ function animate(){
     currPos.add(user.position);
     currPos.multiplyScalar(10);
 
+    let movePos = new THREE.Vector3();
+    movePos.copy(currPos);
     if(planes){
+        movePos.sub(planes.oldPos);
+        movePos.z = 0;
+        movePos.multiplyScalar(0.1);
         if(currPos.z !=planes.oldPos.z){
             planes.updatePlane(planes.zPlane, currPos);
         }
@@ -607,11 +528,18 @@ function animate(){
         if(currPos.x != planes.oldPos.x){
             planes.updatePlane(planes.xPlane, currPos);
         }
+
+        if (groupSelected){
+            planes.planeGroup.position.add(movePos);
+        }
         planes.oldPos.copy(currPos);
         planes.updatePlaneMarks(currPos);
     }
-}
 
+
+
+
+}
 
 function markCellCentre(remove){
     /*
@@ -636,7 +564,6 @@ function markCellCentre(remove){
     mask.segHelpers.push(cube)
 
 }
-
 
 function separateCells(markedCell, mask){
     // Make call to backend to update the array and make new objects
@@ -678,14 +605,12 @@ function updateAnns(data){
                             mask.newCells.push(ann);
                         }
                     });
-
                 })
             }
         }
         mask.removeSegHelpers();
         verify = true;
     }
-
 }
 
 function merge(){
@@ -693,7 +618,6 @@ function merge(){
     This function is used to combine two or more cells into one cell
     Uses the same marking that the removal does meaning 
     marked cells can be rmeoved or merged
-
     */
     let cell_nums = []
     for (let ann of mask.removedAnns){
@@ -702,15 +626,14 @@ function merge(){
 
     quickFetch({action: "merge", cell_nums: cell_nums}, loadCell);
 
-
     function loadCell(data){
         /*
         Similar function to update anns just a few less features since it is 
         only one object and it should never be removed
         */
+
         let object = data.object;
         let cellNums = data.cell_nums;
-        mask.anns = mask.anns.filter(a=>!cellNums.includes(a.cellNum));
         for(let num of cellNums){
             mask.removeAnn(num);
         }
@@ -720,23 +643,17 @@ function merge(){
                 if (child.isMesh) {
                     child.material.color.set(getAntColour((object.cell_num)%15).code);
                     child.material.side = THREE.DoubleSide
-                    child.position.set(0,0,0)
-                    child.scale.set(0.1,0.1,0.1)
-                    
+                    child.position.set(0,0,0);
+                    child.scale.set(0.1,0.1,0.1);                 
                     child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
                     
                     let ann = new Ann(child, object.cell_num);
                     mask.addAnn(ann)
                 }
             });
-
         })
-
         mask.removedAnns = [];
-
-
     }
-
 }
 
 
