@@ -8,6 +8,8 @@ import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { Mask, Ann, quickFetch, Planes} from "./mask.js"
+import { VolumeRenderShader1 } from "three/addons/shaders/VolumeShader.js";
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // General scene elements
 let scene, renderer, camera, gui;
@@ -16,7 +18,7 @@ let oldpos;
 
 // VR Controls
 let controller1, controller2, cgrip1, cgrip2, hand1, hand2;
-
+let slider;
 let dummyCam;
 let dummyController;
 
@@ -46,6 +48,9 @@ let verify = false;
 
 let clock;
 let groupSelected = false;
+
+let volconfig = {};
+let locked = false;
 
 // html pieces for receiving path input
 const oldMaskInp = document.getElementById('maskDP');
@@ -166,11 +171,13 @@ async function init(){
     controller2.addEventListener('squeezeend', onLeftTriggerSqueezeStop);
 
 
+    volconfig.isothreshold = 0.5;
+    volconfig.showMask = 1;
     // Build out GUI
     gui = new GUI({width: 300});
-    gui.add({save: ()=>{
-        mask.updateMask();
-    }}, 'save')
+    gui.add({save: save}, 'save');
+    slider = gui.add(volconfig,"isothreshold", 0,1,0.01).onFinishChange(()=>loadGltf(true, volconfig.isothreshold));
+    gui.add(volconfig, "showMask", 0,1,1).name("Show Mask").onChange(()=>mask.toggleMask(volconfig.showMask));
     gui.domElement.style.visibility = 'hidden';
 
     // make GUI interactive within VR
@@ -180,7 +187,8 @@ async function init(){
     group.listenToXRControllerEvents( controller2 );
     scene.add( group );
     guiMesh = new HTMLMesh( gui.domElement );
-    guiMesh.scale.setScalar( 0 );
+    guiMesh.scale.setScalar( 20 );
+    guiMesh.position.set(2,2,-2);
     group.add( guiMesh );
 
     // Load in cells
@@ -245,57 +253,59 @@ function onRightTriggerStop(){
     rightTriggerHoldTime = Date.now() - rightTriggerHoldTime;
     // save the mask if longer than 3 seconds
     if(rightTriggerHoldTime > 3000 && !groupSelected){
-        quickFetch({action: "save", link: savePath})
+        //save();
     } else if(!groupSelected){
         // Make sure a cell is not highlighted
         if(!zoomed){
             // not trying to merge or remove any cells
             if(mask.removedAnns.length <1){
-    
-                // create list of mesh to intersect
-                let meshList = []
-                for(let ann of mask.anns){
-                    meshList.push(ann.meshObj)
-                }
-    
-                let castedObjects = checkIntersection(meshList);
-                
-                // make sure at least one object was intersected
-                if(castedObjects != null){
-                    let ann = mask.meshToAnn(castedObjects.mItem);
-                    // treat as cell to be segmented
-                    if(ann != undefined && ann.meshObj.material.color != 0x000000){
-                        mask.highlightOne(ann.cellNum)
-                        mask.currentSegmentCell = ann;
-                        ann.meshObj.material.opacity = 0.5
-                        ann.meshObj.material.transparent = true;
-                        zoomed = true;
-                        mask.currentCell = ann.cellNum
-                    } 
-                }
-                // unmark a cell that was to be removed
+                handleCellHighlight();
             } else {
-                let meshList = []
-                for(let ann of mask.removedAnns){
-                    meshList.push(ann.meshObj)
-                }
-    
-                let castedObjects = checkIntersection(meshList);
-                if(castedObjects != null){
-                    let ann = mask.meshToAnn(castedObjects.mItem);
-                    if (ann != undefined){
-                        ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
-                        mask.removedAnns = mask.removedAnns.filter((a)=>{return a!=ann});
-                    }
-                }
+                // unmark a cell that was to be removed
+                handleCellUnmark();
             }
-            // if a cell is highlighted mark the centre
+            
         } else {
+            // if a cell is highlighted mark the centre for segmenting
             markCellCentre(false);
         }
-    } else {
-        groupSelected = false;
     }
+    groupSelected = false;
+}
+
+
+function handleCellHighlight(){
+    let meshList = mask.anns.map(ann => ann.meshObj);
+    let castedObjects = checkIntersection(meshList);
+                
+    // make sure at least one object was intersected
+    if(castedObjects != null){
+        let ann = mask.meshToAnn(castedObjects.mItem);
+        // treat as cell to be segmented
+        if(ann != undefined && ann.meshObj.material.color != 0x000000){
+            mask.highlightOne(ann.cellNum)
+            mask.currentSegmentCell = ann;
+            loadBoundBoxGltf(ann)
+            ann.meshObj.material.opacity = 0.5
+            ann.meshObj.material.transparent = true;
+            zoomed = true;
+            mask.currentCell = ann.cellNum
+        } 
+    }
+}
+
+function handleCellUnmark(){
+    let meshList = mask.removedAnns.map(ann => ann.meshObj);
+    let castedObjects = checkIntersection(meshList);
+
+    if(castedObjects != null){
+        let ann = mask.meshToAnn(castedObjects.mItem);
+        if (ann != undefined){
+            ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+            mask.removedAnns = mask.removedAnns.filter((a)=>{return a!=ann});
+        }
+    }
+
 }
 
 function onRightSqueezeStart(event){
@@ -331,6 +341,8 @@ function onRightSqueezeStop(event){
                 zoomed = false;
                 verify = false;
                 mask.removeNew();
+                scene.remove(mask.imageGroup.tempGroup);
+                scene.add(mask.imageGroup.group);
             } else {
                 markCellCentre(true);
             }
@@ -355,6 +367,9 @@ function onLeftTriggerPress(event){
             mask.toRemove = [];
             mask.currentSegmentCell = null;
             mask.newCells = [];
+            scene.remove(mask.imageGroup.tempGroup);
+            console.log(mask.imageGroup.group);
+            scene.add(mask.imageGroup.group);
             quickFetch({action: "complete_segment"});
         }
     } else if(mask.removedAnns.length > 0){
@@ -442,18 +457,21 @@ function cellLoader(mask_link, image_link){
         let pendingloads = data.objPaths.length;
         planes = new Planes(camera, controller1);
         planes.image = data.image;
+        loadGltf(false);
+        // volumeRenderImage(planes.image);
         for(let object of data.objPaths){
             loader.load(object.path, (obj)=>{
                 obj.traverse(function (child) {
                     if (child.isMesh) {
                         child.material.color.set(getAntColour((object.cell_num)%15).code);
                         child.material.side = THREE.DoubleSide
+                        child.material.opacity = 0.8;
+                        child.material.transparent = true;
                         let shrinkSize = 0.1
                         child.scale.set(shrinkSize,shrinkSize,shrinkSize)
                         
                         child.position.set(object.min_coords.x*shrinkSize, object.min_coords.y*shrinkSize, object.min_coords.z*shrinkSize);
-                        
-                        let ann = new Ann(child, object.cell_num);
+                        let ann = new Ann(child, object.cell_num, object.min_coords, object.max_coords);
                         mask.addAnn(ann)
                     }
                 });
@@ -580,6 +598,8 @@ function updateAnns(data){
     if(objs == null){
         mask.removeSegHelpers();
         mask.unHighlight();
+        scene.remove(mask.imageGroup.tempGroup);
+        scene.add(mask.imageGroup.group);
         zoomed = false;
         markedCell = [];
         mask.currentSegmentCell.meshObj.material.opacity = 1;
@@ -646,6 +666,7 @@ function merge(){
                     child.position.set(0,0,0);
                     child.scale.set(0.1,0.1,0.1);                 
                     child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                    child.opacity = 0.5;
                     
                     let ann = new Ann(child, object.cell_num);
                     mask.addAnn(ann)
@@ -656,4 +677,74 @@ function merge(){
     }
 }
 
+function save(){
+    console.log("Save")
+    quickFetch({action: "save", link: savePath})
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;  // Width of the canvas
+    canvas.height = 128; // Height of the canvas
+
+    const context = canvas.getContext('2d');
+    context.font = '30px Arial'; // Font style and size
+    context.fillStyle = 'white'; // Text color
+    context.textAlign = 'center'; // Center the text
+    context.fillText('Saved!', canvas.width / 2, canvas.height / 2); // Draw text
+
+    // Create a texture from the canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    const planeMaterial = new THREE.MeshBasicMaterial({
+        map: texture,      // Apply the texture
+        side: THREE.DoubleSide // Make sure both sides are visible
+    });
+    const saveText = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.25), planeMaterial);
+    camera.add(saveText);
+    saveText.position.set(0,0,-0.5);
+    saveText.renderOrder = 99999;
+    setTimeout(()=>{camera.remove(saveText)}, 2000)
+}
+
+function loadGltf(refresh, iso){
+    if(zoomed){
+    volconfig.isothreshold = 0.5;
+    slider.updateDisplay();
+    } else{
+    locked=true;
+    if(refresh){
+        quickFetch({action: "newImageCells", isothreshold: iso});
+        scene.remove(mask.imageGroup.group);
+    }
+    const loader = new GLTFLoader();
+    loader.load("objects/image.gltf", (gltf)=>{
+        const model = gltf.scene;
+        mask.imageGroup.group = model;
+        scene.add(model);
+        model.traverse((child)=>{
+            if(child.isMesh){
+                child.scale.set(0.1,0.1,0.1);
+                mask.imageGroup.mesh = child;
+            }
+        })
+    })
+}
+}
+
+function loadBoundBoxGltf(ann){
+    scene.remove(mask.imageGroup.group);
+    quickFetch({action: "customImageCell", min_coords: ann.minCoords, max_coords: ann.maxCoords, iso: volconfig.isothreshold}, newGltfLoad);
+    function newGltfLoad(data){
+        const loader = new GLTFLoader();
+        loader.load("objects/image.gltf", (gltf)=>{
+            const model = gltf.scene;
+            mask.imageGroup.tempGroup = model;
+            scene.add(model);
+            model.traverse((child)=>{
+                if(child.isMesh){
+                    child.scale.set(0.1,0.1,0.1);
+                    child.position.set(ann.minCoords.x*0.1, ann.minCoords.y*0.1, ann.minCoords.z*0.1);
+                    mask.imageGroup.mesh = child;
+                }
+            });
+        });
+    }
+}
 

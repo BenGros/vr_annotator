@@ -17,6 +17,7 @@ export class Mask{
         this.segHelpers = [];
         this.newCells = [];
         this.currentSegmentCell = null;
+        this.imageGroup = {group: null, mesh: null, tempGroup: null};
     }
 
     addAnn(ann){
@@ -144,6 +145,22 @@ export class Mask{
         quickFetch({action: "undo", cellNums: oldCellNums})
         this.currentSegmentCell.meshObj.material.opacity =1;
         this.addAnn(this.currentSegmentCell);
+    }
+
+    toggleMask(show){
+        if(show==1){
+            this.unHighlight();
+        } else {
+            for (let ann of this.anns){
+                this.hideAnn(ann);
+            }
+        }
+    }
+}
+
+export class Image {
+    constructor(greyPath, viridisPath){
+        this.image = null;
 
     }
 }
@@ -151,9 +168,11 @@ export class Mask{
 
 export class Ann {
     // Used to hold cell identifier and the mesh
-    constructor(meshObj, cellNum){
+    constructor(meshObj, cellNum, min, max){
         this.meshObj = meshObj;
         this.cellNum = cellNum;
+        this.minCoords = min;
+        this.maxCoords = max;
     }
 }
 
@@ -212,10 +231,17 @@ export class Planes {
         let background = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.2), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: true}))
         background.renderOrder = 1
 
+        let xPlaneName = this.makePlaneTitle("YZ");
+        let yPlaneName = this.makePlaneTitle("XZ");
+        let zPlaneName = this.makePlaneTitle("XY");
+
         this.planeGroup.add(background);
         this.planeGroup.add(this.xPlane.mesh);
         this.planeGroup.add(this.yPlane.mesh);
         this.planeGroup.add(this.zPlane.mesh);
+        this.planeGroup.add(xPlaneName);
+        this.planeGroup.add(yPlaneName);
+        this.planeGroup.add(zPlaneName);
         this.camera.add(this.planeGroup);
         camera.add(this.planeGroup);
         
@@ -224,19 +250,22 @@ export class Planes {
 
         // Add the planes to the scene
         // this.camera.add(this.xPlane.mesh);
-        this.xPlane.mesh.position.set(-0.2, 0, -0.0)
+        this.xPlane.mesh.position.set(-0.2, 0, -0.0);
+        xPlaneName.position.set(-0.2,-0.125, 0);
         // this.camera.add(this.yPlane.mesh);
         this.yPlane.mesh.position.set(-0.0, 0, -0.0);
+        yPlaneName.position.set(0.0,-0.125,0);
         // this.camera.add(this.zPlane.mesh);
         this.zPlane.mesh.position.set(0.2, 0, -0.0);
+        zPlaneName.position.set(0.2, -0.125,0)
 
 
-        this.planeGroup.position.set(-0.25, 0.2,-0.5);
+        this.planeGroup.position.set(-1, 0.4,-0.5);
 
         // Ensure planes render on top of the cells so always visible
-        this.xPlane.mesh.renderOrder = 99999;
-        this.yPlane.mesh.renderOrder = 99999;
-        this.zPlane.mesh.renderOrder = 99999;
+        this.xPlane.mesh.renderOrder = 99998;
+        this.yPlane.mesh.renderOrder = 99998;
+        this.zPlane.mesh.renderOrder = 99998;
     }
 
     updatePlane(plane, pos){
@@ -361,5 +390,29 @@ export class Planes {
 
 
     }
+
+    makePlaneTitle(name){
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;  // Width of the canvas
+        canvas.height = 256; // Height of the canvas
+
+        const context = canvas.getContext('2d');
+        context.font = '150px Arial'; // Font style and size
+        context.fillStyle = 'white'; // Text color
+        context.textAlign = 'center'; // Center the text
+        context.fillText(name, canvas.width / 2, canvas.height / 2); // Draw text
+
+        // Create a texture from the canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        const planeMaterial = new THREE.MeshBasicMaterial({
+            map: texture,      // Apply the texture
+            side: THREE.DoubleSide // Make sure both sides are visible
+        });
+        const planeName = new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.05), planeMaterial);
+
+        return planeName;
+    }
+
+
 }
 

@@ -2,7 +2,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import json
 import numpy as np
 
-from vr_tool.create_cell_objects import all, full_segmentation, removeCell, merge_cells
+from vr_tool.create_cell_objects import all, full_segmentation, removeCell, merge_cells, create_image_cells, create_custom_image_cell
 
 # Hold the mask to be saved
 mask = None
@@ -26,10 +26,6 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 print("SVAED")
                 link = parsed_data['link']
                 # write out mask
-                # with open(link,'r') as f:
-                #     whole_mask = np.array(json.load(f))
-                #     whole_mask[:,:,:] = mask
-
                 with open(link, 'w') as f:
                     f.write(json.dumps(mask.tolist()))
 
@@ -56,11 +52,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
             elif (parsed_data['action'] == "load"):
-                print(parsed_data)
                 link = parsed_data['mask_link']
                 im_link = parsed_data['image_link']
                 with open(im_link,'r') as f:
                     image = np.array(json.load(f))[:,:,:]
+                    create_image_cells(image)
 
                 with open(link,'r') as f:
                     # load the mask from provided link
@@ -107,6 +103,36 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_message).encode('utf-8'))
+
+            elif(parsed_data['action']=="newImageCells"):
+                isoNormal = parsed_data['isothreshold']
+                max = np.amax(image)
+                min = np.amin(image)
+                iso = max - (isoNormal*(max-min))
+                create_image_cells(image, iso)
+                self.send_response(200)
+                response_message = {'message': 'Data received successfully.'}
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
+
+            elif(parsed_data['action']=="customImageCell"):
+                print(parsed_data)
+                min = parsed_data['min_coords']
+                max = parsed_data['max_coords']
+                iso = parsed_data['iso']
+                threshMax = np.amax(image)
+                threshMin = np.amin(image)
+                iso = threshMax - (iso*(threshMax-threshMin))
+                create_custom_image_cell(image, max, min, iso)
+                self.send_response(200)
+                response_message = {'message': 'Data received successfully.'}
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_message).encode('utf-8'))
+
+                
+                
 
 
         except json.JSONDecodeError:

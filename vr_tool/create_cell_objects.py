@@ -82,12 +82,11 @@ def create_cell_object(cell_mask, save_path):
         if(num > max):
             max = num
     
-    print(f"max: {max} min: {min}")
 
     if(cell_mask.shape[0]>1 and cell_mask.shape[1]>1 and cell_mask.shape[2] >1):
         try:
             correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
-            verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=0.1)
+            verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=np.amax(cell_mask)/2)
             # Prepare the faces array for PyVista
             faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
             # Create a PyVista mesh from the marching cubes output
@@ -238,6 +237,11 @@ def full_segmentation(umask, cell_num, markers, next_cell_num):
 
 
 def merge_cells(mask, cell_nums):
+    """
+    Used to combine two or more cells into one 
+    First combines them on the array and then will create the mask
+    for the new cell and produce the object from there
+    """
     for num in np.nditer(mask, op_flags=['readwrite']):
         if(num in cell_nums):
             num[...] = cell_nums[0]
@@ -254,7 +258,45 @@ def merge_cells(mask, cell_nums):
 
     return_data = {'object': obj_info, 'cell_nums': cell_nums}
 
-    
-
-
     return mask, return_data
+
+
+def create_image_cells(image, isothreshold=-1):
+    if(isothreshold < 0):
+        level = (np.amax(image) + np.amin(image))/2
+    else:
+        level = isothreshold
+    correct_shape_mask = np.transpose(image, axes=(0,2,1))
+    verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=level)
+    # Prepare the faces array for PyVista
+    faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
+    # Create a PyVista mesh from the marching cubes output
+    mesh = pv.PolyData(verts, faces_pv)
+    mesh.fill_holes(10000, True)
+    mesh.smooth(inplace=True)
+    mesh.compute_normals()
+    mesh.point_data['scalars'] = values
+    p = pv.Plotter()
+    p.add_mesh(mesh, scalars='scalars', cmap='viridis')
+    dir_path = "./vr_tool/objects"
+    os.makedirs(dir_path, exist_ok=True)
+    p.export_gltf("./vr_tool/objects/image.gltf")
+
+
+def create_custom_image_cell(image, max, min, iso):
+    partial_image = image[min['z']:max['z'], min['y']:max['y'], min['x']:max['x']]
+    correct_shape_mask = np.transpose(partial_image, axes=(0,2,1))
+    verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=iso)
+    # Prepare the faces array for PyVista
+    faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
+    # Create a PyVista mesh from the marching cubes output
+    mesh = pv.PolyData(verts, faces_pv)
+    mesh.fill_holes(10000, True)
+    mesh.smooth(inplace=True)
+    mesh.compute_normals()
+    mesh.point_data['scalars'] = values
+    p = pv.Plotter()
+    p.add_mesh(mesh, scalars='scalars', cmap='viridis')
+    dir_path = "./vr_tool/objects"
+    p.export_gltf("./vr_tool/objects/image.gltf")
+
