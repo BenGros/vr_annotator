@@ -345,6 +345,13 @@ function merge(){
 }
 
 function save(){
+    /*
+    This method is used to save the changes to the mask to the new file or the 
+    original mask file depending on the user selection
+
+    The quickfetch does the saving the rest of the function is creating a pop up to tell the user they saved
+    it successfully
+    */
     quickFetch({action: "save", link: savePath})
     const canvas = document.createElement('canvas');
     canvas.width = 256;  // Width of the canvas

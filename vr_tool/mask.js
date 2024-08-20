@@ -1,10 +1,8 @@
 import * as THREE from 'three';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
 import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { XRControllerModelFactory} from 'three/addons/webxr/XRControllerModelFactory.js';
-import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 
 export class Mask{
     /*
@@ -84,7 +82,6 @@ export class Mask{
         */
         for(let ann of this.anns){
             if(ann.cellNum != cellNum){
-                console.log("Here")
                 this.hideAnn(ann);
             } else {
                 ann.meshObj.scale.set(0.1,0.1,0.1)
@@ -173,12 +170,13 @@ export class Ann {
     }
 }
 
+/**
+ * Simplify fetch calls in other methods
+ * - All follow the same send an object and then use some function on received data
+ * @param {Object} body - Object to send to backend
+ * @param {Function} [callFunc] - Optional callback function to be used to process return data
+ */
 export function quickFetch(body, callFunc){
-    /*
-    Basic fetch function to simplify fetch calls in other methods
-    Allows the user to send an object to the backend and then use 
-    a callback function on the data received. Can also not use any function if not needed
-    */
     console.log(body)
     fetch("http://127.0.0.1:8080/", {
         method: "POST",
@@ -196,7 +194,7 @@ export function quickFetch(body, callFunc){
           return response.json();
         })
         .then(function (data) {
-            if(callFunc != null || callFunc != undefined){
+            if(typeof callFunc === 'function'){
                 callFunc(data);
             }
             console.log("Server response:", data);
@@ -209,8 +207,16 @@ export function quickFetch(body, callFunc){
         });
 }
 
-
+/**
+ * Handles all the basic scene setup and general variables like the scene itself, camera, renderer and more
+ * 
+ * @class
+ */
 export class SceneManager {
+    /**
+     * Initializes all scene properties and sets up cameras for movement
+     * 
+     */
     constructor(){
         this.zoomed = false;
         this.verify = false;
@@ -227,6 +233,16 @@ export class SceneManager {
         this.scene.add(this.cameraControls.user); 
     }
 
+    /**
+     * - Sets up GUI including adding the sliders to control the iso threshold level and whether or not 
+     * to include the mask. 
+     * - Also makes the gui able to handle vr interactions.
+     * @param {Object} mask - Instance of Mask class to handle annotations and cells
+     * @param {Function} save - method used to save mask to file
+     * @param {Function} loadGltf - Load in the lightsheet image
+     * @param {Object} controller1 - Right handed VR controller
+     * @param {Object} controller2  - Left Handed VR controller
+     */
     setupGUI(mask, save, loadGltf, controller1, controller2){
         this.guiControls.gui.add({save: save}, 'save');
         this.guiControls.slider = this.guiControls.gui.add(this.volconfig,"isothreshold", 0,1,0.01).onFinishChange((value)=>loadGltf(true, value));
@@ -244,6 +260,10 @@ export class SceneManager {
         this.guiControls.group.add( this.guiControls.guiMesh );
     }
     
+    /**
+     * Sets up renderer and enables webxr
+     * @param {Document} document - The DOM document object
+     */
     setupRenderer(document){
         this.renderer.setPixelRatio( window.devicePixelRatio );
         this.renderer.setSize( window.innerWidth, window.innerHeight );
@@ -251,6 +271,9 @@ export class SceneManager {
         document.body.appendChild( this.renderer.domElement );
     }
 
+    /**
+     * Adds three lighting sources to the scene
+     */
     addLighting(){
         const ambientLight = new THREE.AmbientLight(0xffffff); // White light
         this.scene.add(ambientLight);
@@ -285,9 +308,20 @@ export class Controls {
 
     onRightTriggerStart(){
         this.rightTriggerHoldTime = Date.now();
-        console.log(this.rightTriggerHoldTime);
     }
 
+    /**
+     * #### If not zoomed (not segmenting)
+     * - If no marked cells, then highlight the cell to begin segmenting process
+     * - If marked cells, unmark the cell
+     * #### If zoomed (segmenting)
+     * - Place a marker to segment that piece
+     * @param {Mask} mask - Instance of Mask class to handle cell annotations
+     * @param {Function} checkIntersection - Check intersection between vrLine and cells
+     * @param {Function} getAntColour - return colour based on cell number
+     * @param {Function} loadBoundBoxGltf - Load in the lightsheet image only around the cell
+     * @param {Function} markCellCentre - Function used to mark the centre of a cell for segmenting
+     */
     onRightTriggerStop(mask, checkIntersection, getAntColour, loadBoundBoxGltf, markCellCentre){
         /* Check if zoomed in on one cell
         If not use raycaster to detect the interacted cell and zoom in 
@@ -321,6 +355,13 @@ export class Controls {
 
     }
 
+    /**
+     * Hides all other cell annotation from screen and will show the section of lightsheet image
+     * only included in the boudning box around the annotation
+     * @param {Mask} mask - Instance of Mask class to handle cell annotations
+     * @param {Function} checkIntersection - Check intersection between vrLine and cells
+     * @param {Function} loadBoundBoxGltf - Load in the lightsheet image only around the cell
+     */
     handleCellHighlight(mask, checkIntersection, loadBoundBoxGltf){
         let meshList = mask.anns.map(ann => ann.meshObj);
         let castedObjects = checkIntersection(meshList);
@@ -341,6 +382,12 @@ export class Controls {
         }
     }
 
+    /**
+     * If a cell is marked (for removal or merging) convert it back to normal
+     * @param {Mask} mask - Instance of Mask class to handle cell annotations
+     * @param {Function} checkIntersection - Check intersection between vrLine and cells
+     * @param {Function} getAntColour - return colour based on cell number
+     */
     cellUnmark(mask, checkIntersection, getAntColour){
         let meshList = mask.removedAnns.map(ann => ann.meshObj);
         let castedObjects = checkIntersection(meshList);
@@ -356,15 +403,21 @@ export class Controls {
 
     onRightSqueezeStart(){
         this.rightSqueezeHoldTime = Date.now();
-        console.log(`Right sque: ${this.rightSqueezeHoldTime}`);
     }
 
+    /**
+     * Method is used to merge cells together if it has been held for longer than 1.9 seconds.
+     * Will mark a cell (Can be for merging or removal) if short pressed
+     * It can undo a segmentation if in the verification stage
+     * Lastly mark a segmentation piece for removal if during segmentation phase(zoomed in on cell)
+     * @param {Function} merge - Function used to merge two or more cells into one
+     * @param {Object} mask - Instance of a class to handle cell annotations
+     * @param {Function} markCellCentre - Function used to mark the centre of a cell for segmenting
+     * @param {Function} checkIntersection - Check if the vrLine has intersected any cells
+     */
     onRightSqueezeStop(merge, mask, markCellCentre, checkIntersection){
-        console.log(`Right squ: ${this.rightSqueezeHoldTime}`);
         this.rightSqueezeHoldTime = parseInt(Date.now()) - parseInt(this.rightSqueezeHoldTime);
-        console.log(`Right sq: ${this.rightSqueezeHoldTime}`);
         if(this.rightSqueezeHoldTime > 1900){
-            console.log("Merge")
             merge();
         } else {
             if(!this.sceneManager.zoomed){
@@ -391,6 +444,12 @@ export class Controls {
         }
     }
 
+    /**
+     * Segments a cell if two or more cubes are placed. Will complete a segmentation by adding the other annotations
+     * back if already segmented. Or will remove marked cells if there is one or more marked cell. Otherwise does nothing
+     * @param {Object} mask - An instance of the class used to manage annotations and cells
+     * @param {Function} separateCells - function called to separate one cell annotation into two or more
+     */
     onLeftTriggerPress(mask, separateCells){
         if(this.sceneManager.markedCell.length > 1){
             if(!this.sceneManager.verify){
@@ -422,11 +481,13 @@ export class Controls {
         this.controller2.userData.squeezePressed = false;
     }
     
+    /**
+     * Method is used for moving the user (camera and controllers) in the direction of the left
+     * controller when holding the squeeze on the left controller.
+     * @param {number} dt - time delta to ensure smooth movement 
+     */
     handleMovement(dt){
-        /*  
-        Well motion is wanted calculate the camera direction and move entire user object
-        in that direction at a preset speed
-        */
+
         if (this.controller2.userData.squeezePressed){
             const speed = 0.5;
             const quaternion = this.sceneManager.cameraControls.user.quaternion.clone();
@@ -438,6 +499,10 @@ export class Controls {
         }
     }
 
+    /**
+     * Used to add controller grips and hands to the scene. Also used to add
+     * a guide line to the right controller to help with cell interactions
+     */
     createGrips(){
         const controllerModelFactory = new XRControllerModelFactory();
         const cgrip1 = this.sceneManager.renderer.xr.getControllerGrip(0);
@@ -461,6 +526,16 @@ export class Controls {
         this.controller1.add(this.controlLine);
     }
 
+    /**
+     * Add all event listeners to the controller 
+     * @param {Mask} mask - Instance of Mask Class to control cell annotations
+     * @param {Function} merge - Function used to merge two or more cells together
+     * @param {Function} markCellCentre - Function used to mark a part of a cell for segmenting
+     * @param {Function} checkIntersection - Check intersection between vrLine and cells
+     * @param {Function} getAntColour - given cell number return a colour
+     * @param {Function} loadBoundBoxGltf - Load in the lightsheet image only around the cell
+     * @param {Function} separateCells - Segment a cell into two or more
+     */
     addEventListeners(mask, merge, markCellCentre, checkIntersection, getAntColour, loadBoundBoxGltf, separateCells){
         // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
         this.controller1.addEventListener('selectstart', ()=>this.onRightTriggerStart());

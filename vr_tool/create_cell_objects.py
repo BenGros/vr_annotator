@@ -135,7 +135,10 @@ def separate_cells(mask, cell_num, markers, next_cell_num):
     marker_mask = np.zeros((cell_mask.shape), np.int_)
     count = 0
     next_c_num = next_cell_num
+    
     while(count< len(markers)):
+        if(cell_num%15 == next_c_num%15):
+            next_c_num+=1
         point = {"z": int(round(markers[count]['z'] - bound_box[4], 0)), "y": int(round(markers[count]['y']- bound_box[2],0)), "x": int(round(markers[count]['x']- bound_box[0],0))}
         if(count == 0):
             if(point['z']-1>=0):
