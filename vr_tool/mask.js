@@ -1,5 +1,10 @@
 import * as THREE from 'three';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
+import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
+import { XRControllerModelFactory} from 'three/addons/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 
 export class Mask{
     /*
@@ -158,14 +163,6 @@ export class Mask{
     }
 }
 
-export class Image {
-    constructor(greyPath, viridisPath){
-        this.image = null;
-
-    }
-}
-
-
 export class Ann {
     // Used to hold cell identifier and the mesh
     constructor(meshObj, cellNum, min, max){
@@ -213,206 +210,270 @@ export function quickFetch(body, callFunc){
 }
 
 
-
-export class Planes {
-    /*
-    This class is used to store the 3 axis planes and other relevant information for them
-    Such as the array data and the last position of the controller
-    */
-    constructor(camera){
-        this.xPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false, color: 0xff0000})), axis: "x", texture: null} ;
-        this.yPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false})), axis: "y", texture: null};
-        this.zPlane = {mesh: new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.1), new THREE.MeshBasicMaterial({depthTest: false})), axis: "z", texture: null};
-        this.planeGroup = new THREE.Group();
-        this.oldPos = new THREE.Vector3(0,0,0);
-        this.image = null;
-        this.camera = camera
-
-        let background = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.2), new THREE.MeshBasicMaterial({color: 0x000000, depthTest: true}))
-        background.renderOrder = 1
-
-        let xPlaneName = this.makePlaneTitle("YZ");
-        let yPlaneName = this.makePlaneTitle("XZ");
-        let zPlaneName = this.makePlaneTitle("XY");
-
-        this.planeGroup.add(background);
-        this.planeGroup.add(this.xPlane.mesh);
-        this.planeGroup.add(this.yPlane.mesh);
-        this.planeGroup.add(this.zPlane.mesh);
-        this.planeGroup.add(xPlaneName);
-        this.planeGroup.add(yPlaneName);
-        this.planeGroup.add(zPlaneName);
-        this.camera.add(this.planeGroup);
-        camera.add(this.planeGroup);
+export class SceneManager {
+    constructor(){
+        this.zoomed = false;
+        this.verify = false;
+        this.markedCell = [];
+        this.scene = new THREE.Scene();
+        this.clock = new THREE.Clock();
+        this.renderer = new THREE.WebGLRenderer();
+        this.cameraControls = {camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
+            user: new THREE.Object3D()};
+        this.guiControls = {gui: new GUI({width:300}), guiMesh: null, group: new InteractiveGroup(), slider: null};
+        this.volconfig = {isothreshold: 0.5, showMask: 1};
         
-        // this.camera.add(background)
-        background.position.set(0,0,0)
-
-        // Add the planes to the scene
-        // this.camera.add(this.xPlane.mesh);
-        this.xPlane.mesh.position.set(-0.2, 0, -0.0);
-        xPlaneName.position.set(-0.2,-0.125, 0);
-        // this.camera.add(this.yPlane.mesh);
-        this.yPlane.mesh.position.set(-0.0, 0, -0.0);
-        yPlaneName.position.set(0.0,-0.125,0);
-        // this.camera.add(this.zPlane.mesh);
-        this.zPlane.mesh.position.set(0.2, 0, -0.0);
-        zPlaneName.position.set(0.2, -0.125,0)
-
-
-        this.planeGroup.position.set(-1, 0.4,-0.5);
-
-        // Ensure planes render on top of the cells so always visible
-        this.xPlane.mesh.renderOrder = 99998;
-        this.yPlane.mesh.renderOrder = 99998;
-        this.zPlane.mesh.renderOrder = 99998;
+        this.cameraControls.user.add(this.cameraControls.camera);
+        this.scene.add(this.cameraControls.user); 
     }
 
-    updatePlane(plane, pos){
-        /*
-        Takes in one of the 3 axis planes and the current controller1 position
-        It will then identify the slice for the plane 
-        Once the slice is identified it will create a map for that plane
-        This map is then applied to the plane mesh and updated.
+    setupGUI(mask, save, loadGltf, controller1, controller2){
+        this.guiControls.gui.add({save: save}, 'save');
+        this.guiControls.slider = this.guiControls.gui.add(this.volconfig,"isothreshold", 0,1,0.01).onFinishChange((value)=>loadGltf(true, value));
+        this.guiControls.gui.add(this.volconfig, "showMask", 0,1,1).name("Show Mask").onChange(()=>mask.toggleMask(this.volconfig.showMask));
+        this.guiControls.gui.domElement.style.visibility = 'hidden';
 
-        These maps help the user understand where they are located and what
-        the true image looks like for their position
-        The maps are updated any time the controller position moves
+        // make GUI interactive within VR
+        this.guiControls.group.listenToPointerEvents( this.renderer, this.cameraControls.camera );
+        this.guiControls.group.listenToXRControllerEvents( controller1 );
+        this.guiControls.group.listenToXRControllerEvents( controller2 );
+        this.scene.add( this.guiControls.group );
+        this.guiControls.guiMesh = new HTMLMesh( this.guiControls.gui.domElement );
+        this.guiControls.guiMesh.scale.setScalar( 20 );
+        this.guiControls.guiMesh.position.set(2,2,-2);
+        this.guiControls.group.add( this.guiControls.guiMesh );
+    }
+    
+    setupRenderer(document){
+        this.renderer.setPixelRatio( window.devicePixelRatio );
+        this.renderer.setSize( window.innerWidth, window.innerHeight );
+        this.renderer.xr.enabled = true;
+        document.body.appendChild( this.renderer.domElement );
+    }
+
+    addLighting(){
+        const ambientLight = new THREE.AmbientLight(0xffffff); // White light
+        this.scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(1, 1, 1).normalize();
+        this.scene.add(directionalLight);
+
+        const oppositeLight = new THREE.DirectionalLight(0xffffff, 1);
+        oppositeLight.position.set(-1, -1, -1).normalize();
+        this.scene.add(oppositeLight);
+    }
+}
+
+export class Controls {
+    constructor(sceneManager){
+        this.controller1 = sceneManager.renderer.xr.getController(1);
+        this.controller2 = sceneManager.renderer.xr.getController(0);
+        this.dummyController = new THREE.Object3D();
+        this.rightTriggerHoldTime = null;
+
+        this.leftTriggerHoldTime = 0;
+        this.rightSqueezeHoldTime = 0;
+        this.sceneManager = sceneManager;
+        this.controlLine= null;
+
+        this.controller2.add(this.dummyController);
+        this.sceneManager.cameraControls.user.add(this.controller1);
+        this.sceneManager.cameraControls.user.add(this.controller2);
+
+    }
+
+    onRightTriggerStart(){
+        this.rightTriggerHoldTime = Date.now();
+        console.log(this.rightTriggerHoldTime);
+    }
+
+    onRightTriggerStop(mask, checkIntersection, getAntColour, loadBoundBoxGltf, markCellCentre){
+        /* Check if zoomed in on one cell
+        If not use raycaster to detect the interacted cell and zoom in 
+        on it.
+
+        If it is zoomed mark the centre of the cell with a cube signalling it 
+        is to be segmented and kept
         */
-        let slice = 0;
-        let axis = plane.axis;
-        if(axis == "z"){
-            slice = pos.z;
-        } else if (axis == "y"){
-            slice = pos.y;
-        } else {
-            slice = pos.x;
-        }
-        if(slice > 63){
-            slice = 63
-        } else if (slice < 0){
-            slice = 0;
-        }
 
-        let dataText = new Uint8Array(64*64 * 4);
-        for (let y = 0; y < 64; y++) {
-            for (let x = 0; x < 64; x++) {
-                let index = (y * 64 + x) * 4;
-                let dp = 0;
-                if(axis == "z"){
-                    dp = this.image[Math.round(slice)][y][x];
-                } else if (axis == "y"){
-                    dp = this.image[y][Math.round(slice)][x];
+        // See how long the press was
+        this.rightTriggerHoldTime = Date.now() - this.rightTriggerHoldTime;
+        // save the mask if longer than 3 seconds
+        if(this.rightTriggerHoldTime > 3000){
+            //save();
+        } else {
+            // Make sure a cell is not highlighted
+            if(!this.sceneManager.zoomed){
+                // not trying to merge or remove any cells
+                if(mask.removedAnns.length <1){
+                    this.handleCellHighlight(mask, checkIntersection, loadBoundBoxGltf);
                 } else {
-                    dp = this.image[y][x][Math.round(slice)];
+                    // unmark a cell that was to be removed
+                    this.cellUnmark(mask, checkIntersection, getAntColour);
                 }
-                dataText[index] = dp; // Red
-                dataText[index + 1] = dp; // Green
-                dataText[index + 2] = dp; // Blue (0 for no blue component)
-                dataText[index + 3] =255;
+                
+            } else {
+                // if a cell is highlighted mark the centre for segmenting
+                markCellCentre(false);
             }
         }
 
-        const texture = new THREE.DataTexture(
-            dataText,
-            64,
-            64,
-            THREE.RGBAFormat,
-            THREE.UnsignedByteType
-            );
-            texture.needsUpdate = true;
-        
-        if(axis == "z"){
-            this.zPlane.mesh.material = new THREE.MeshBasicMaterial({map: texture, depthTest: false});
-            this.zPlane.texture = texture;
-        } else if (axis == "y"){
-            this.yPlane.mesh.material = new THREE.MeshBasicMaterial({map:texture, depthTest: false});
-            this.yPlane.texture = texture;
-        } else {
-            this.xPlane.mesh.material = new THREE.MeshBasicMaterial({map: texture, depthTest: false});
-            this.xPlane.texture = texture;
+    }
+
+    handleCellHighlight(mask, checkIntersection, loadBoundBoxGltf){
+        let meshList = mask.anns.map(ann => ann.meshObj);
+        let castedObjects = checkIntersection(meshList);
+                    
+        // make sure at least one object was intersected
+        if(castedObjects != null){
+            let ann = mask.meshToAnn(castedObjects.mItem);
+            // treat as cell to be segmented
+            if(ann != undefined && ann.meshObj.material.color != 0x000000){
+                mask.highlightOne(ann.cellNum)
+                mask.currentSegmentCell = ann;
+                loadBoundBoxGltf(ann)
+                ann.meshObj.material.opacity = 0.5
+                ann.meshObj.material.transparent = true;
+                this.sceneManager.zoomed = true;
+                mask.currentCell = ann.cellNum
+            } 
         }
     }
 
-    updatePlaneMarks(pos){
-        /*
-        Takes in the current controller1 position and finds the point in each axis for the array
-        It then updates each of the planes to show a red mark where the user currently is
-        This is to help the user identify what the real image looks like at their current position
+    cellUnmark(mask, checkIntersection, getAntColour){
+        let meshList = mask.removedAnns.map(ann => ann.meshObj);
+        let castedObjects = checkIntersection(meshList);
+
+        if(castedObjects != null){
+            let ann = mask.meshToAnn(castedObjects.mItem);
+            if (ann != undefined){
+                ann.meshObj.material.color.set(getAntColour(ann.cellNum%15).code);
+                mask.removedAnns = mask.removedAnns.filter((a)=>{return a!=ann});
+            }
+        }
+    }
+
+    onRightSqueezeStart(){
+        this.rightSqueezeHoldTime = Date.now();
+        console.log(`Right sque: ${this.rightSqueezeHoldTime}`);
+    }
+
+    onRightSqueezeStop(merge, mask, markCellCentre, checkIntersection){
+        console.log(`Right squ: ${this.rightSqueezeHoldTime}`);
+        this.rightSqueezeHoldTime = parseInt(Date.now()) - parseInt(this.rightSqueezeHoldTime);
+        console.log(`Right sq: ${this.rightSqueezeHoldTime}`);
+        if(this.rightSqueezeHoldTime > 1900){
+            console.log("Merge")
+            merge();
+        } else {
+            if(!this.sceneManager.zoomed){
+                let meshList = mask.anns.map(ann=>ann.meshObj);
+        
+                let castedObjects = checkIntersection(meshList);
+                if(castedObjects != null){
+                    let ann = mask.meshToAnn(castedObjects.mItem);
+                    mask.markForRemove(ann);
+                }
+            } else {
+                if(this.sceneManager.verify){
+                    mask.unHighlight();
+                    this.sceneManager.markedCell = [];
+                    this.sceneManager.zoomed = false;
+                    this.sceneManager.verify = false;
+                    mask.removeNew();
+                    this.sceneManager.scene.remove(mask.imageGroup.tempGroup);
+                    this.sceneManager.scene.add(mask.imageGroup.group);
+                } else {
+                    markCellCentre(true);
+                }
+            }
+        }
+    }
+
+    onLeftTriggerPress(mask, separateCells){
+        if(this.sceneManager.markedCell.length > 1){
+            if(!this.sceneManager.verify){
+                separateCells(this.sceneManager.markedCell, mask);
+            } else {
+                mask.unHighlight();
+                this.sceneManager.markedCell = [];
+                this.sceneManager.zoomed = false;
+                this.sceneManager.verify = false;
+                mask.toRemove = [];
+                mask.currentSegmentCell = null;
+                mask.newCells = [];
+                this.sceneManager.scene.remove(mask.imageGroup.tempGroup);
+                this.sceneManager.scene.add(mask.imageGroup.group);
+                quickFetch({action: "complete_segment"});
+            }
+        } else if(mask.removedAnns.length > 0){
+            mask.removeAllAnns();
+        }
+    }
+
+    onLeftTriggerSqueezeStart(){
+
+        this.controller2.userData.squeezePressed = true;
+    }
+    
+    onLeftTriggerSqueezeStop(){
+        // stops motion
+        this.controller2.userData.squeezePressed = false;
+    }
+    
+    handleMovement(dt){
+        /*  
+        Well motion is wanted calculate the camera direction and move entire user object
+        in that direction at a preset speed
         */
-
-        let zTextureData = new Uint8Array(this.zPlane.texture.image.data);
-        let zInd = (Math.round(pos.y) * 64 + Math.round(pos.x))*4
-        zTextureData[zInd] = 255;
-        zTextureData[zInd+1] = 0;
-        zTextureData[zInd +2]=0;
-        const zTexture = new THREE.DataTexture(
-            zTextureData,
-            64,
-            64,
-            THREE.RGBAFormat,
-            THREE.UnsignedByteType
-            );
-            zTexture.needsUpdate = true;
-        this.zPlane.mesh.material = new THREE.MeshBasicMaterial({map: zTexture, depthTest: false});
-
-
-        let yTextureData = new Uint8Array(this.yPlane.texture.image.data);
-        let yInd = (Math.round(pos.z) * 64 + Math.round(pos.x))*4
-        yTextureData[yInd] = 255;
-        yTextureData[yInd+1] = 0;
-        yTextureData[yInd +2]=0;
-        const yTexture = new THREE.DataTexture(
-            yTextureData,
-            64,
-            64,
-            THREE.RGBAFormat,
-            THREE.UnsignedByteType
-            );
-            yTexture.needsUpdate = true;
-        this.yPlane.mesh.material = new THREE.MeshBasicMaterial({map: yTexture, depthTest: false});
-
-
-        let xTextureData = new Uint8Array(this.xPlane.texture.image.data);
-        let xInd = (Math.round(pos.z) * 64 + Math.round(pos.y))*4
-        xTextureData[xInd] = 255;
-        xTextureData[xInd+1] = 0;
-        xTextureData[xInd +2]=0;
-        const xTexture = new THREE.DataTexture(
-            xTextureData,
-            64,
-            64,
-            THREE.RGBAFormat,
-            THREE.UnsignedByteType
-            );
-            xTexture.needsUpdate = true;
-        this.xPlane.mesh.material = new THREE.MeshBasicMaterial({map: xTexture, depthTest: false});
-
-
+        if (this.controller2.userData.squeezePressed){
+            const speed = 0.5;
+            const quaternion = this.sceneManager.cameraControls.user.quaternion.clone();
+            const quat = new THREE.Quaternion();
+            this.dummyController.getWorldQuaternion(quat);
+            this.sceneManager.cameraControls.user.quaternion.copy(quat);
+            this.sceneManager.cameraControls.user.translateZ(-dt*speed);
+            this.sceneManager.cameraControls.user.quaternion.copy(quaternion);
+        }
     }
 
-    makePlaneTitle(name){
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;  // Width of the canvas
-        canvas.height = 256; // Height of the canvas
+    createGrips(){
+        const controllerModelFactory = new XRControllerModelFactory();
+        const cgrip1 = this.sceneManager.renderer.xr.getControllerGrip(0);
+        cgrip1.add(controllerModelFactory.createControllerModel( cgrip1 ));
+        this.sceneManager.cameraControls.user.add(cgrip1);
 
-        const context = canvas.getContext('2d');
-        context.font = '150px Arial'; // Font style and size
-        context.fillStyle = 'white'; // Text color
-        context.textAlign = 'center'; // Center the text
-        context.fillText(name, canvas.width / 2, canvas.height / 2); // Draw text
+        const cgrip2 = this.sceneManager.renderer.xr.getControllerGrip(1);
+        cgrip2.add(controllerModelFactory.createControllerModel( cgrip2 ));
+        this.sceneManager.cameraControls.user.add(cgrip2);
 
-        // Create a texture from the canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        const planeMaterial = new THREE.MeshBasicMaterial({
-            map: texture,      // Apply the texture
-            side: THREE.DoubleSide // Make sure both sides are visible
-        });
-        const planeName = new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.05), planeMaterial);
+        // setup VR hand visuals
+        const hand1 = this.sceneManager.renderer.xr.getHand(0);
+        this.sceneManager.cameraControls.user.add(hand1);
 
-        return planeName;
+        const hand2 = this.sceneManager.renderer.xr.getHand(1);
+        this.sceneManager.cameraControls.user.add(hand2);
+
+        const lineGeom = new THREE.BufferGeometry();
+        lineGeom.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
+        this.controlLine = new THREE.Line(lineGeom)
+        this.controller1.add(this.controlLine);
     }
 
+    addEventListeners(mask, merge, markCellCentre, checkIntersection, getAntColour, loadBoundBoxGltf, separateCells){
+        // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
+        this.controller1.addEventListener('selectstart', ()=>this.onRightTriggerStart());
+        this.controller1.addEventListener('selectend', ()=>this.onRightTriggerStop(mask, checkIntersection, getAntColour, loadBoundBoxGltf, markCellCentre));
+        // Will either mark the centre of a cell for removal or mark an entire cell for removal
+        this.controller1.addEventListener('squeezestart', ()=>this.onRightSqueezeStart());
+        this.controller1.addEventListener('squeezeend', ()=>{this.onRightSqueezeStop(merge, mask, markCellCentre, checkIntersection)});
+        // Will send request back to backend for removals and segmentations
+        this.controller2.addEventListener('selectstart', ()=>{this.onLeftTriggerPress(mask, separateCells)});
+        // Start movement
+        this.controller2.addEventListener('squeezestart', ()=>this.onLeftTriggerSqueezeStart());
+        // End movement
+        this.controller2.addEventListener('squeezeend', ()=>this.onLeftTriggerSqueezeStop());
 
-}
-
+    }
+} 
