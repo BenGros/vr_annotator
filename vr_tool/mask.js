@@ -20,7 +20,7 @@ export class Mask{
         this.segHelpers = [];
         this.newCells = [];
         this.currentSegmentCell = null;
-        this.imageGroup = {group: null, mesh: null, tempGroup: null};
+        this.imageGroup = {group: null, mesh: null, tempGroup: null, tempMesh: null};
     }
 
     addAnn(ann){
@@ -129,7 +129,7 @@ export class Mask{
         }
     }
 
-    removeNew(){
+    removeNew(sceneManager){
         /*
         This method is called when a user ends up not wanting to use
         the segmentation that occured.
@@ -145,17 +145,48 @@ export class Mask{
         }
         oldCellNums.sort();
         quickFetch({action: "undo", cellNums: oldCellNums})
-        this.currentSegmentCell.meshObj.material.opacity =1;
+        this.currentSegmentCell.meshObj.material.opacity =sceneManager.volconfig.maskOpacity;
         this.addAnn(this.currentSegmentCell);
     }
 
-    toggleMask(show){
-        if(show==1){
-            this.unHighlight();
+    toggleMask(show, sceneManager){
+        if (!sceneManager.zoomed){
+            if(show==1){
+                this.unHighlight();
+            } else {
+                for (let ann of this.anns){
+                    this.hideAnn(ann);
+                }
+            }
         } else {
-            for (let ann of this.anns){
+            
+            if(show == 1){
+                let ann = this.hiddenAnns.filter(a=>a.cellNum==this.currentCell)[0];
+                if(ann){
+                    this.hiddenAnns = this.hiddenAnns.filter(a=>a.cellNum != this.currentCell);
+                    this.scene.add(ann.meshObj);
+                }
+
+            } else {
+                console.log(this.currentCell);
+                let ann = this.anns.filter(a=>a.cellNum==this.currentCell)[0];
                 this.hideAnn(ann);
             }
+        }
+    }
+
+    changeMaskOpacity(opacity){
+        for(let ann of this.anns){
+            ann.meshObj.material.opacity = opacity;
+        }
+    }
+
+    changeImageOpacity(opacity){
+        console.log(this.imageGroup.mesh.material.alphaMode)
+
+        this.imageGroup.mesh.material.opacity=opacity;
+        if(this.imageGroup.tempMesh){
+            this.imageGroup.tempMesh = opacity;
         }
     }
 }
@@ -226,8 +257,8 @@ export class SceneManager {
         this.renderer = new THREE.WebGLRenderer();
         this.cameraControls = {camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
             user: new THREE.Object3D()};
-        this.guiControls = {gui: new GUI({width:300}), guiMesh: null, group: new InteractiveGroup(), slider: null};
-        this.volconfig = {isothreshold: 0.5, showMask: 1};
+        this.guiControls = {gui: new GUI({width:300}), guiMesh: null, group: new InteractiveGroup(), slider: null, active: false};
+        this.volconfig = {isothreshold: 0.5, showMask: 1, maskOpacity: 0.8, imageOpacity: 1.0};
         
         this.cameraControls.user.add(this.cameraControls.camera);
         this.scene.add(this.cameraControls.user); 
@@ -243,10 +274,19 @@ export class SceneManager {
      * @param {Object} controller1 - Right handed VR controller
      * @param {Object} controller2  - Left Handed VR controller
      */
-    setupGUI(mask, save, loadGltf, controller1, controller2){
+    setupGUI(mask, save, loadGltf,loadBoundBoxGltf, controller1, controller2){
         this.guiControls.gui.add({save: save}, 'save');
-        this.guiControls.slider = this.guiControls.gui.add(this.volconfig,"isothreshold", 0,1,0.01).onFinishChange((value)=>loadGltf(true, value));
-        this.guiControls.gui.add(this.volconfig, "showMask", 0,1,1).name("Show Mask").onChange(()=>mask.toggleMask(this.volconfig.showMask));
+        this.guiControls.slider = this.guiControls.gui.add(this.volconfig,"isothreshold", 0,1,0.01).onFinishChange((value)=>{
+            if(!this.zoomed){
+                loadGltf(true, value);
+            } else{
+                let ann = mask.anns.filter(a=>a.cellNum==mask.currentCell)[0];
+                loadBoundBoxGltf(ann);
+            }
+        });
+        this.guiControls.gui.add(this.volconfig, "maskOpacity", 0,1, 0.01).onFinishChange((value)=>mask.changeMaskOpacity(value));
+        this.guiControls.gui.add(this.volconfig, "imageOpacity",0,1,0.01).onFinishChange((value)=>mask.changeImageOpacity(value));
+        this.guiControls.gui.add(this.volconfig, "showMask", 0,1,1).name("Show Mask").onChange(()=>mask.toggleMask(this.volconfig.showMask, this));
         this.guiControls.gui.domElement.style.visibility = 'hidden';
 
         // make GUI interactive within VR
@@ -306,8 +346,12 @@ export class Controls {
 
     }
 
-    onRightTriggerStart(){
+    onRightTriggerStart(checkIntersection){
         this.rightTriggerHoldTime = Date.now();
+        let m = checkIntersection([this.sceneManager.guiControls.guiMesh])
+        if(m != null){
+            this.sceneManager.guiControls.active = true;
+        }
     }
 
     /**
@@ -349,9 +393,12 @@ export class Controls {
                 
             } else {
                 // if a cell is highlighted mark the centre for segmenting
-                markCellCentre(false);
+                if(!this.sceneManager.guiControls.active){
+                    markCellCentre(false);
+                }
             }
         }
+        this.sceneManager.guiControls.active = false;
 
     }
 
@@ -374,7 +421,7 @@ export class Controls {
                 mask.highlightOne(ann.cellNum)
                 mask.currentSegmentCell = ann;
                 loadBoundBoxGltf(ann)
-                ann.meshObj.material.opacity = 0.5
+                ann.meshObj.material.opacity = this.sceneManager.volconfig.maskOpacity;
                 ann.meshObj.material.transparent = true;
                 this.sceneManager.zoomed = true;
                 mask.currentCell = ann.cellNum
@@ -434,7 +481,7 @@ export class Controls {
                     this.sceneManager.markedCell = [];
                     this.sceneManager.zoomed = false;
                     this.sceneManager.verify = false;
-                    mask.removeNew();
+                    mask.removeNew(this.sceneManager);
                     this.sceneManager.scene.remove(mask.imageGroup.tempGroup);
                     this.sceneManager.scene.add(mask.imageGroup.group);
                 } else {
@@ -463,6 +510,8 @@ export class Controls {
                 mask.currentSegmentCell = null;
                 mask.newCells = [];
                 this.sceneManager.scene.remove(mask.imageGroup.tempGroup);
+                this.sceneManager.volconfig.isothreshold = 0.5;
+                this.sceneManager.guiControls.slider.updateDisplay()
                 this.sceneManager.scene.add(mask.imageGroup.group);
                 quickFetch({action: "complete_segment"});
             }
@@ -538,7 +587,7 @@ export class Controls {
      */
     addEventListeners(mask, merge, markCellCentre, checkIntersection, getAntColour, loadBoundBoxGltf, separateCells){
         // Can highligh a single cell, once it does that it marks the centre of a cell for splitting
-        this.controller1.addEventListener('selectstart', ()=>this.onRightTriggerStart());
+        this.controller1.addEventListener('selectstart', ()=>this.onRightTriggerStart(checkIntersection));
         this.controller1.addEventListener('selectend', ()=>this.onRightTriggerStop(mask, checkIntersection, getAntColour, loadBoundBoxGltf, markCellCentre));
         // Will either mark the centre of a cell for removal or mark an entire cell for removal
         this.controller1.addEventListener('squeezestart', ()=>this.onRightSqueezeStart());

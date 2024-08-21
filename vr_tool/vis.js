@@ -62,7 +62,7 @@ async function init(){
         controls.addEventListeners(mask, merge, markCellCentre, checkIntersection, getAntColour, loadBoundBoxGltf, separateCells);
 
 
-        sceneManager.setupGUI(mask, save, loadGltf, controls.controller1, controls.controller2);
+        sceneManager.setupGUI(mask, save, loadGltf, loadBoundBoxGltf, controls.controller1, controls.controller2);
 
         // Load in cells
         cellLoader(mask_data_path, image_data_path).then(()=>{
@@ -159,7 +159,7 @@ function cellLoader(mask_link, image_link){
                     if (child.isMesh) {
                         child.material.color.set(getAntColour((object.cell_num)%15).code);
                         child.material.side = THREE.DoubleSide
-                        child.material.opacity = 0.8;
+                        child.material.opacity = sceneManager.volconfig.maskOpacity;
                         child.material.transparent = true;
                         let shrinkSize = 0.1
                         child.scale.set(shrinkSize,shrinkSize,shrinkSize)
@@ -261,11 +261,13 @@ function updateAnns(data){
     if(objs == null){
         mask.removeSegHelpers();
         mask.unHighlight();
+        sceneManager.volconfig.isothreshold = 0.5;
+        sceneManager.guiControls.slider.updateDisplay()
         sceneManager.scene.remove(mask.imageGroup.tempGroup);
         sceneManager.scene.add(mask.imageGroup.group);
         sceneManager.zoomed = false;
         sceneManager.markedCell = [];
-        mask.currentSegmentCell.meshObj.material.opacity = 1;
+        mask.currentSegmentCell.meshObj.material.opacity = sceneManager.volconfig.maskOpacity;
 
     } else{
         let loader = new OBJLoader();
@@ -280,7 +282,7 @@ function updateAnns(data){
                             child.material.side = THREE.DoubleSide;
                             child.position.set(0,0,0);
                             child.scale.set(0.1,0.1,0.1);
-                            child.material.opacity = 0.5;
+                            child.material.opacity = sceneManager.volconfig.maskOpacity;
                             child.material.transparent = true;
                             
                             child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
@@ -331,7 +333,7 @@ function merge(){
                     child.position.set(0,0,0);
                     child.scale.set(0.1,0.1,0.1);                 
                     child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
-                    child.material.opacity = 0.5;
+                    child.material.opacity = sceneManager.volconfig.maskOpacity;
                     child.material.transparent = true;
 
                     
@@ -377,13 +379,10 @@ function save(){
 }
 
 function loadGltf(refresh, iso){
-    if(sceneManager.zoomed){
-    sceneManager.volconfig.isothreshold = 0.5;
-    sceneManager.slider.updateDisplay();
-    } else{
     if(refresh){
         quickFetch({action: "newImageCells", isothreshold: iso});
         sceneManager.scene.remove(mask.imageGroup.group);
+        sceneManager.scene.remove(mask.imageGroup.tempGroup);
     }
     const loader = new GLTFLoader();
     loader.load("objects/image.gltf", (gltf)=>{
@@ -394,15 +393,18 @@ function loadGltf(refresh, iso){
             if(child.isMesh){
                 child.scale.set(0.1,0.1,0.1);
                 child.material.side = THREE.DoubleSide;
+                child.material.opacity = sceneManager.volconfig.imageOpacity;
+                child.material.transparent=false;
                 mask.imageGroup.mesh = child;
+                child.renderOrder = 2;
             }
         })
     })
 }
-}
 
 function loadBoundBoxGltf(ann){
     sceneManager.scene.remove(mask.imageGroup.group);
+    sceneManager.scene.remove(mask.imageGroup.tempGroup);
     quickFetch({action: "customImageCell", min_coords: ann.minCoords, max_coords: ann.maxCoords, iso: sceneManager.volconfig.isothreshold}, newGltfLoad);
     function newGltfLoad(data){
         const loader = new GLTFLoader();
@@ -414,6 +416,7 @@ function loadBoundBoxGltf(ann){
                 if(child.isMesh){
                     child.scale.set(0.1,0.1,0.1);
                     child.material.side = THREE.DoubleSide;
+                    child.material.opacity = sceneManager.volconfig.imageOpacity;
                     child.position.set(ann.minCoords.x*0.1, ann.minCoords.y*0.1, ann.minCoords.z*0.1);
                     mask.imageGroup.mesh = child;
                 }
