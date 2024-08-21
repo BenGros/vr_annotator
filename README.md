@@ -38,6 +38,8 @@ python backend.py
 
 Once in the VR environment the controllers are used to navigate the annotating process.
 
+### Controllers
+![vr_controls](https://github.com/user-attachments/assets/4c3ac0d7-7063-48a6-bfeb-c3ca892058ec)
 ### Moving around
 
 The movement is done by squeezing the left controller grip. While squeezing you will move in
