@@ -23,7 +23,6 @@ class RequestHandler(SimpleHTTPRequestHandler):
             # Process the received data
             parsed_data = json.loads(data.decode('utf-8'))
             if(parsed_data['action'] == "save"):
-                print("SVAED")
                 link = parsed_data['link']
                 # write out mask
                 with open(link, 'w') as f:
@@ -148,7 +147,7 @@ def run_server():
     handler = RequestHandler
     RequestHandler.directory = "./vr_tool"
     httpd = HTTPServer(server_address, RequestHandler)
-    print('Starting server on http://{}:{}'.format(server_address[0], server_address[1]))
+    print('Starting server on http://{}:{}/vr_tool/main.html'.format(server_address[0], server_address[1]))
     httpd.serve_forever()
 
 

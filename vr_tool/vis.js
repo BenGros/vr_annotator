@@ -38,14 +38,11 @@ form.addEventListener('submit', async (event)=>{
     document.body.appendChild( VRButton.createButton( sceneManager.renderer ) );
 })
 
-// Initialization
-// TODO: Break into smaller parts
+/**
+ * Initializes the scene including creating the camera, controls, gui and adding the masks and the image to the scene
+ * @returns Promise to allow await to be used for timing of adding the vr button and image loaded notice
+ */
 async function init(){
-    /*
-    Make init an async function to ensure the vr button is not added until after the cells are loaded
-    Init is wrapped in a promise that is resolved once the cell promise is resolved. Can now just use await
-    when init is called to enforce this behaviour.
-    */
     return new Promise((resolve, reject)=>{
 
         sceneManager.scene.background = new THREE.Color(0x0000ff);
@@ -77,6 +74,11 @@ async function init(){
     })
 }
 
+/**
+ * Used to find the first object that the VRLine intersects with based on the given list of mesh
+ * @param {Array} meshList - Contains all mesh objects that are to be checked if the vrLine intersects with 
+ * @returns The mesh if sopmething is intersected or null if nothing is intersected
+ */
 function checkIntersection(meshList){
     /* Used to find the first mesh that the 
     VRcontroller helper line intersects with */
@@ -137,22 +139,24 @@ function getAntColour(colour){
     }
 }
 
-function cellLoader(mask_link, image_link){
-    /*
-    Used to load in all cell objects based on the path provided by the
+/**
+ *  Used to create and load in all cell objects based on the path provided by the
     backend which generates the objects
     Then applies the colouring to the cell and shrinks it by 10 to make them easier to maneuver around
 
     Returns a promise that is resolved when all the loads are finished. This ensures the user does not have access
     to the vr mode until the cells are loaded.
-    */
+ * @param {String} mask_link - relative or absolute path to the mask json file
+ * @param {String} image_link - relative or absolute path to the image json file 
+ * @returns Promise to be used to ensure that the vr button is not added to the display until after all the cells have loaded
+ */
+function cellLoader(mask_link, image_link){
    return new Promise((resolve, reject)=>{
    
     function loading(data) {
         let loader = new OBJLoader();
         let pendingloads = data.objPaths.length;
         loadGltf(false);
-        // volumeRenderImage(planes.image);
         for(let object of data.objPaths){
             loader.load(object.path, (obj)=>{
                 obj.traverse(function (child) {
@@ -222,15 +226,12 @@ function animate(){
 
 }
 
+/**
+ * Used to mark parts of an existing cell for segmenting. Each cube will become a new cell.
+ * The cubes are placed atthe end of the right-handed controller.
+ * @param {boolean} remove - Whether the marked cell is to be removed (true) or added (false)
+ */
 function markCellCentre(remove){
-    /*
-    Adds controller position with user offset (due to movement) applied
-    to keep position consistent to original array
-
-    Creates a cube at the position and colours it white or black 
-    based on whether the cell is being kept or not
-    */
-
     let pos = new THREE.Vector3();
     pos.copy(controls.controller1.position);
     pos.add(sceneManager.cameraControls.user.position);
@@ -239,6 +240,8 @@ function markCellCentre(remove){
     sceneManager.markedCell.push(pos);
 
     let cube = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.1), new THREE.MeshBasicMaterial({color:0xffffff}));
+
+    // make cube black iof it is going to be removed
     remove && cube.material.color.set(0x000000); 
     cube.position.set(pos.x*0.1,pos.y*0.1,pos.z*0.1);
     sceneManager.scene.add(cube);
@@ -251,12 +254,12 @@ function separateCells(markedCell, mask){
     quickFetch({action: "split", markers: markedCell, curr_cell: mask.currentCell, next_cell: mask.getNextCellNum()}, updateAnns);
 }
 
+/**
+ * Is used to show the newly segmented cells. Will remove the old cell and add the new cells to the scene.
+ * Will storethe old cell in case the user does not like the segmentation.
+ * @param {Object} data - Received from the backend after segemnetation occurs. Contains information abo the new cells. 
+ */
 function updateAnns(data){
-    /*
-    Takes the new objects from the backend and removes the old object
-    and adds the new ones
-    Adds the other cells back to allow more annotating
-    */
     let objs = data.objects
     if(objs == null){
         mask.removeSegHelpers();
@@ -378,6 +381,11 @@ function save(){
     setTimeout(()=>{sceneManager.cameraControls.camera.remove(saveText)}, 2000)
 }
 
+/**
+ * Used to create and load a 3d rendering of the entire lightsheet image provided
+ * @param {boolean} refresh - whether or not there is already an image
+ * @param {number} iso - Used to set the isothrehold level for the 3d rendering of the lightsheet data 
+ */
 function loadGltf(refresh, iso){
     if(refresh){
         quickFetch({action: "newImageCells", isothreshold: iso});
@@ -402,18 +410,29 @@ function loadGltf(refresh, iso){
     })
 }
 
+/**
+ * Used to create and load the lightsheet image only around the area of the current cell being looked at
+ * @param {Ann} ann - Annotation variable holding cell number, the mesh and the bound box coordinates 
+ */
 function loadBoundBoxGltf(ann){
+    // Remove the old images from scene
     sceneManager.scene.remove(mask.imageGroup.group);
     sceneManager.scene.remove(mask.imageGroup.tempGroup);
+    // use pyvista to create the image using the bound box coordinates for the annotation
     quickFetch({action: "customImageCell", min_coords: ann.minCoords, max_coords: ann.maxCoords, iso: sceneManager.volconfig.isothreshold}, newGltfLoad);
+
+    // callback function to process the object created
     function newGltfLoad(data){
+        // load in the new gltf object
         const loader = new GLTFLoader();
         loader.load("objects/image.gltf", (gltf)=>{
+            // add the object to the scene
             const model = gltf.scene;
             mask.imageGroup.tempGroup = model;
             sceneManager.scene.add(model);
             model.traverse((child)=>{
                 if(child.isMesh){
+                    // change mesh to fit into the scene
                     child.scale.set(0.1,0.1,0.1);
                     child.material.side = THREE.DoubleSide;
                     child.material.opacity = sceneManager.volconfig.imageOpacity;
@@ -424,4 +443,3 @@ function loadBoundBoxGltf(ann){
         });
     }
 }
-

@@ -129,14 +129,13 @@ export class Mask{
         }
     }
 
+    /**
+     * Used to undo a segmentation that occurred.
+     * - Empties the array containing the new objects and removes them
+     * - Adds back the old pre-segmentation object
+     * @param {SceneManager} sceneManager - Instance of class controlling main scene variables like the camera and objects within scene 
+     */
     removeNew(sceneManager){
-        /*
-        This method is called when a user ends up not wanting to use
-        the segmentation that occured.
-
-        Removes the cell from the scene and records it cell number so it
-        can be removed from the array and turned back into the original cell
-        */
         let oldCellNums = [];
         while(this.newCells.length > 0){
             let ann = this.newCells.pop();
@@ -149,6 +148,13 @@ export class Mask{
         this.addAnn(this.currentSegmentCell);
     }
 
+    /**
+     * Removes or adds total mask or single cell mask based on state
+     * - When not single cell remove all masks or add all masks based on show variable
+     * - When single cell or toggle that single mask
+     * @param {number} show - 0 means do not show mask, 1 means show mask 
+     * @param {SceneManager} sceneManager - Contains scene state variables like zoomed to determine if scene is in segmentation mode
+     */
     toggleMask(show, sceneManager){
         if (!sceneManager.zoomed){
             if(show==1){
@@ -159,18 +165,16 @@ export class Mask{
                 }
             }
         } else {
-            
             if(show == 1){
-                let ann = this.hiddenAnns.filter(a=>a.cellNum==this.currentCell)[0];
-                if(ann){
-                    this.hiddenAnns = this.hiddenAnns.filter(a=>a.cellNum != this.currentCell);
-                    this.scene.add(ann.meshObj);
+                if(this.hiddenAnns.includes(this.currentSegmentCell)){
+                    this.hiddenAnns = this.hiddenAnns.filter(a=>a != this.currentSegmentCell);
+                    this.scene.add(this.currentSegmentCell.meshObj);
                 }
 
             } else {
-                console.log(this.currentCell);
-                let ann = this.anns.filter(a=>a.cellNum==this.currentCell)[0];
-                this.hideAnn(ann);
+                if(!this.hiddenAnns.includes(this.currentSegmentCell)){
+                    this.hideAnn(this.currentSegmentCell);
+                }
             }
         }
     }
@@ -328,6 +332,9 @@ export class SceneManager {
     }
 }
 
+/**
+ * Handles all the controller setup and event listeners for the controllers
+ */
 export class Controls {
     constructor(sceneManager){
         this.controller1 = sceneManager.renderer.xr.getController(1);
@@ -346,6 +353,12 @@ export class Controls {
 
     }
 
+    /**
+     * Gets a timestamp to know how long trigger was pushed for.
+     * Also checks if intersectig with the gui and if so it does not 
+     * allow annotating controls to occur.
+     * @param {Function} checkIntersection - - Check intersection between vrLine and the gui
+     */
     onRightTriggerStart(checkIntersection){
         this.rightTriggerHoldTime = Date.now();
         let m = checkIntersection([this.sceneManager.guiControls.guiMesh])

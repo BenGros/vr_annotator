@@ -140,6 +140,7 @@ def separate_cells(mask, cell_num, markers, next_cell_num):
         if(cell_num%15 == next_c_num%15):
             next_c_num+=1
         point = {"z": int(round(markers[count]['z'] - bound_box[4], 0)), "y": int(round(markers[count]['y']- bound_box[2],0)), "x": int(round(markers[count]['x']- bound_box[0],0))}
+        print(point)
         if(count == 0):
             if(point['z']-1>=0):
                 marker_mask[point["z"]-1][point['y']][point['x']] = cell_num

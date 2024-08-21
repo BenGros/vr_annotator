@@ -4,6 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["BenGros <bgros@uwo.ca>"]
 readme = "README.md"
+packages = [{ include = "vr_tool" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
