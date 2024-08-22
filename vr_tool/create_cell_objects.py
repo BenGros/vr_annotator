@@ -86,14 +86,19 @@ def create_cell_object(cell_mask, save_path):
     if(cell_mask.shape[0]>1 and cell_mask.shape[1]>1 and cell_mask.shape[2] >1):
         try:
             correct_shape_mask = np.transpose(cell_mask, axes=(2,1,0))
+            volume = correct_shape_mask.shape[0] * correct_shape_mask.shape[1] * correct_shape_mask.shape[2]
             verts, faces, normals, values = measure.marching_cubes(correct_shape_mask, level=np.amax(cell_mask)/2)
             # Prepare the faces array for PyVista
             faces_pv = np.c_[np.full(len(faces), 3), faces].ravel()
             # Create a PyVista mesh from the marching cubes output
             mesh = pv.PolyData(verts, faces_pv)
-            mesh.fill_holes(1000, True)
-            mesh.smooth(inplace=True)
-            mesh.compute_normals()
+            if(volume < 250):
+                mesh = mesh.delaunay_3d()
+                mesh = mesh.extract_surface()
+            else:
+                mesh.fill_holes(1000, True)
+                mesh.smooth(inplace=True)
+                mesh.compute_normals()
             dir_path = "./vr_tool/objects"
             os.makedirs(dir_path, exist_ok=True)
             mesh.save(save_path)
@@ -104,6 +109,7 @@ def create_cell_object(cell_mask, save_path):
     return False
 
 def all(mask):
+    print("By")
     # Combine functions to make cell objects for every cell from the mask
     all_obj_paths = []
     all_cell_nums = get_all_instances(mask)
@@ -212,6 +218,8 @@ def make_new_objects(up_mask, updated_cell):
             complete = create_cell_object(cell_mask, save_path)
             if(complete):
                 all_obj_paths.append(obj_info)
+            else:
+                return None
         else:
             obj_info = {"cell_num": cell['cell_num'], "remove": True}
             all_obj_paths.append(obj_info)

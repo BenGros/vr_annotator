@@ -1,7 +1,10 @@
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import json
 import numpy as np
-
+import sys
+import importlib
+import vr_tool.create_cell_objects
+importlib.reload(vr_tool.create_cell_objects)
 from vr_tool.create_cell_objects import all, full_segmentation, removeCell, merge_cells, create_image_cells, create_custom_image_cell
 
 # Hold the mask to be saved
@@ -11,7 +14,7 @@ updated_mask = None
 image = None
 
 class RequestHandler(SimpleHTTPRequestHandler):
-    
+
     def do_POST(self):
         # make masks global to be able to access constantly
         global mask
@@ -43,7 +46,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     next_cell_num = parsed_data['next_cell']
                     # Return new segmented cells
                     objects = full_segmentation(updated_mask, curr_cell_num, markers, next_cell_num)
-                    response_message = {'message': 'Data received successfully.', 'objects': objects}
+                    if(objects == None):
+                        response_message= {'message': 'Error', 'objects': None}
+                    else:
+                        response_message = {'message': 'Data received successfully.', 'objects': objects}
                 except:
                     response_message= {'message': 'Error', 'objects': None}
                 self.send_response(200)
