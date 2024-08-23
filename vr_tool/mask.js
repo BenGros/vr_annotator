@@ -262,6 +262,7 @@ export class SceneManager {
         this.cameraControls = {camera: new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000),
             user: new THREE.Object3D()};
         this.guiControls = {gui: new GUI({width:300}), guiMesh: null, group: new InteractiveGroup(), slider: null, active: false};
+        this.guiControls.gui.domElement.style.visibility = 'hidden';
         this.volconfig = {isothreshold: 0.5, showMask: 1, maskOpacity: 0.8, imageOpacity: 1.0};
         
         this.cameraControls.user.add(this.cameraControls.camera);

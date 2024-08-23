@@ -26,40 +26,103 @@
         display: block;
       }
       .inputs {
-        width: 400px;
-        margin: 10px;
-        height: 20px;
+        flex: 1; /* Allow the input to take up all available space */
+        margin-right: 4px; /* Add some space between input and button */
+        padding: 4px; /* Add padding for better appearance */
+        box-sizing: border-box;
+      }
+
+      body {
+        background-color: lightgray;
+      }
+
+      h1 {
+        text-align: center;
+      }
+
+      p {
+        font-size: 20px;
+      }
+
+      .form-container {
+        display: flex;
+        flex-direction: column;
+        gap: 16px; /* Adjust spacing between rows as needed */
+        width: 100%;
+      }
+      .form-input-container {
+        display: flex;
+        width: 100%;
+        margin: 8px;
+        align-items: center;
+      }
+
+      label {
+        width: 150px;
+      }
+
+      #saveLoc {
+        margin-left: -17px;
+      }
+
+      .submit {
+        display: flex;
+        justify-content: flex-end; /* Align items to the right */
+        margin-top: 12px;
+      }
+      #subBtn {
+        font-size: 20px;
       }
     </style>
   </head>
   <body>
     <div id="paths">
-      <h1>Enter the path to the mask file relative to the vr_tool directory</h1>
-      <form>
-        <input
-          class="inputs"
-          id="imagePath"
-          type="text"
-          placeholder="Image Data Path"
-          style="display: inline"
-        />
-        <button type="button" id="imBtn">Clear</button>
-        <br />
-        <input
-          class="inputs"
-          id="maskDP"
-          type="text"
-          placeholder="Mask Data Path"
-          style="display: inline"
-        />
-        <button type="button" id="maskBtn">Clear</button>
-        <br />
-        <label>New Save Location</label>
-        <input type="checkbox" id="saveLoc" />
-        <input type="text" placeholder="save path" id="newSavePath" />
-        <input id="subBtn" type="submit" value="Submit" />
-        <h1 id="loaded"></h1>
-      </form>
+      <h1>Vr Annotator</h1>
+      <p>
+        Enter the absolute path or the path relative to the vr_annotator
+        directory for the mask and image file
+      </p>
+      <div class="form-container">
+        <form>
+          <div class="form-input-container">
+            <label>Enter Image Path</label>
+            <input
+              class="inputs"
+              id="imagePath"
+              type="text"
+              placeholder="Image Data Path"
+              style="display: inline"
+            />
+            <button type="button" id="imBtn">Clear</button>
+          </div>
+          <div class="form-input-container">
+            <label>Enter Mask Path</label>
+            <input
+              class="inputs"
+              id="maskDP"
+              type="text"
+              placeholder="Mask Data Path"
+              style="display: inline"
+            />
+            <button type="button" id="maskBtn">Clear</button>
+          </div>
+          <div class="form-input-container">
+            <label>New Save Location</label>
+            <input type="checkbox" id="saveLoc" />
+            <input
+              type="text"
+              class="inputs"
+              placeholder="save path"
+              id="newSavePath"
+            />
+            <button type="button" id="newSaveBtn">Clear</button>
+          </div>
+          <div class="submit">
+            <input id="subBtn" type="submit" value="Submit" />
+          </div>
+          <h1 id="loaded"></h1>
+        </form>
+      </div>
     </div>
     <script src="vis.js" type="module"></script>
     <script src="main.js"></script>

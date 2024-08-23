@@ -9,7 +9,7 @@ let mask_data_path = '';
 let image_data_path = '';
 let savePath = '';
 
-
+let shrinkSize = 0.1
 let sceneManager = new SceneManager();
 let mask = new Mask(sceneManager.scene);
 let controls = new Controls(sceneManager, mask, merge, markCellCentre, checkIntersection, getAntColour, loadBoundBoxGltf, separateCells);
@@ -165,7 +165,6 @@ function cellLoader(mask_link, image_link){
                         child.material.side = THREE.DoubleSide
                         child.material.opacity = sceneManager.volconfig.maskOpacity;
                         child.material.transparent = true;
-                        let shrinkSize = 0.1
                         child.scale.set(shrinkSize,shrinkSize,shrinkSize)
                         
                         child.position.set(object.min_coords.x*shrinkSize, object.min_coords.y*shrinkSize, object.min_coords.z*shrinkSize);
@@ -235,15 +234,15 @@ function markCellCentre(remove){
     let pos = new THREE.Vector3();
     pos.copy(controls.controller1.position);
     pos.add(sceneManager.cameraControls.user.position);
-    pos.multiplyScalar(10);
+    pos.multiplyScalar(1/shrinkSize);
     pos.remove = remove;
     sceneManager.markedCell.push(pos);
 
-    let cube = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.1), new THREE.MeshBasicMaterial({color:0xffffff}));
+    let cube = new THREE.Mesh(new THREE.BoxGeometry(shrinkSize,shrinkSize,shrinkSize), new THREE.MeshBasicMaterial({color:0xffffff}));
 
     // make cube black iof it is going to be removed
     remove && cube.material.color.set(0x000000); 
-    cube.position.set(pos.x*0.1,pos.y*0.1,pos.z*0.1);
+    cube.position.set(pos.x*shrinkSize,pos.y*shrinkSize,pos.z*shrinkSize);
     sceneManager.scene.add(cube);
     mask.segHelpers.push(cube)
 
@@ -284,11 +283,11 @@ function updateAnns(data){
                             child.material.color.set(getAntColour((object.cell_num)%15).code);
                             child.material.side = THREE.DoubleSide;
                             child.position.set(0,0,0);
-                            child.scale.set(0.1,0.1,0.1);
+                            child.scale.set(shrinkSize,shrinkSize,shrinkSize);
                             child.material.opacity = sceneManager.volconfig.maskOpacity;
                             child.material.transparent = true;
                             
-                            child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                            child.position.set(object.min_coords.x*shrinkSize, object.min_coords.y*shrinkSize, object.min_coords.z*shrinkSize);
                             
                             let ann = new Ann(child, object.cell_num, object.min_coords, object.max_coords);
                             mask.addAnn(ann)
@@ -334,8 +333,8 @@ function merge(){
                     child.material.color.set(getAntColour((object.cell_num)%15).code);
                     child.material.side = THREE.DoubleSide
                     child.position.set(0,0,0);
-                    child.scale.set(0.1,0.1,0.1);                 
-                    child.position.set(object.min_coords.x*0.1, object.min_coords.y*0.1, object.min_coords.z*0.1);
+                    child.scale.set(shrinkSize,shrinkSize,shrinkSize);                 
+                    child.position.set(object.min_coords.x*shrinkSize, object.min_coords.y*shrinkSize, object.min_coords.z*shrinkSize);
                     child.material.opacity = sceneManager.volconfig.maskOpacity;
                     child.material.transparent = true;
 
@@ -399,7 +398,7 @@ function loadGltf(refresh, iso){
         sceneManager.scene.add(model);
         model.traverse((child)=>{
             if(child.isMesh){
-                child.scale.set(0.1,0.1,0.1);
+                child.scale.set(shrinkSize,shrinkSize,shrinkSize);
                 child.material.side = THREE.DoubleSide;
                 child.material.opacity = sceneManager.volconfig.imageOpacity;
                 child.material.transparent=false;
@@ -433,10 +432,10 @@ function loadBoundBoxGltf(ann){
             model.traverse((child)=>{
                 if(child.isMesh){
                     // change mesh to fit into the scene
-                    child.scale.set(0.1,0.1,0.1);
+                    child.scale.set(shrinkSize,shrinkSize,shrinkSize);
                     child.material.side = THREE.DoubleSide;
                     child.material.opacity = sceneManager.volconfig.imageOpacity;
-                    child.position.set(ann.minCoords.x*0.1, ann.minCoords.y*0.1, ann.minCoords.z*0.1);
+                    child.position.set(ann.minCoords.x*shrinkSize, ann.minCoords.y*shrinkSize, ann.minCoords.z*shrinkSize);
                     mask.imageGroup.mesh = child;
                 }
             });
